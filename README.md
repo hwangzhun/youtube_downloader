@@ -1,6 +1,6 @@
 # YouTube DownLoader 视频下载工具使用说明
 
-![icon](resources\icons\app_icon.png "YouTube DownLoader")
+![icon](https://raw.githubusercontent.com/hwangzhun/youtube_downloader/refs/heads/main/resources/icons/app_icon.png "YouTube DownLoader")
 ## 简介
 
 YouTube DownLoader 是一款基于 Python 开发的桌面应用程序，采用 PyQt5 构建用户界面，设计风格为 Metro 风格。用户可以通过该工具轻松下载 YouTube 视频，支持单条或多条视频链接批量下载，并提供多种实用功能。
