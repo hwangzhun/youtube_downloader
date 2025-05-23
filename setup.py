@@ -1,6 +1,6 @@
 """
-YouTube 視頻下載工具的安裝腳本
-用於創建 Windows 安裝程序
+YouTube DownLoader 视频下载工具的安装脚本
+用于创建 Windows 安装程序
 """
 import os
 import sys
@@ -12,9 +12,9 @@ from cx_Freeze import setup, Executable
 base_dir = os.path.abspath(os.path.dirname(__file__))
 
 # 應用程序信息
-APP_NAME = "YouTube 視頻下載工具"
+APP_NAME = "YouTube DownLoader"
 APP_VERSION = "1.0.0"
-APP_DESCRIPTION = "一個簡單易用的 YouTube 視頻下載工具"
+APP_DESCRIPTION = "一个简单易用 YouTube 视频下载工具"
 APP_AUTHOR = "開發者"
 APP_ICON = os.path.join(base_dir, "resources", "icons", "app_icon.ico")
 

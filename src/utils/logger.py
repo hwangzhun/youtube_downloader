@@ -5,8 +5,11 @@ YouTube 視頻下載工具的日誌管理模塊
 import os
 import sys
 import logging
+import platform
+import traceback
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
+from typing import Dict
 
 
 class LoggerManager:
@@ -47,7 +50,8 @@ class LoggerManager:
         file_handler = RotatingFileHandler(
             self.log_file,
             maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
+            backupCount=5,
+            encoding='utf-8'
         )
         file_handler.setLevel(log_level)
         
@@ -55,16 +59,69 @@ class LoggerManager:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(log_level)
         
-        # 設置格式
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        # 設置詳細的日誌格式
+        detailed_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
         )
-        file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
+        file_handler.setFormatter(detailed_formatter)
+        console_handler.setFormatter(detailed_formatter)
         
         # 添加處理器到記錄器
         self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
+        
+        # 記錄系統信息
+        self._log_system_info()
+    
+    def _log_system_info(self):
+        """記錄系統信息"""
+        system_info = self._get_system_info()
+        self.info(f"系統信息: {system_info}")
+    
+    def _get_system_info(self) -> Dict[str, str]:
+        """获取系统信息"""
+        try:
+            import platform
+            import psutil
+            
+            info = {
+                'platform': platform.platform(),
+                'python_version': platform.python_version(),
+                'processor': platform.processor(),
+            }
+            
+            # 获取内存信息
+            try:
+                memory = psutil.virtual_memory()
+                info['memory'] = f"总内存: {self._format_size(memory.total)}, 可用: {self._format_size(memory.available)}"
+            except:
+                info['memory'] = "无法获取内存信息"
+            
+            # 获取磁盘空间信息
+            try:
+                disk = psutil.disk_usage('/')
+                info['disk_space'] = f"总空间: {self._format_size(disk.total)}, 可用: {self._format_size(disk.free)}"
+            except:
+                info['disk_space'] = "无法获取磁盘空间信息"
+            
+            return info
+        except Exception as e:
+            self.logger.error(f"获取系统信息时发生错误: {str(e)}", exc_info=True)
+            return {
+                'platform': platform.platform(),
+                'python_version': platform.python_version(),
+                'processor': platform.processor(),
+                'memory': "无法获取内存信息",
+                'disk_space': "无法获取磁盘空间信息"
+            }
+    
+    def _format_size(self, size: int) -> str:
+        """格式化文件大小"""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024:
+                return f"{size:.2f} {unit}"
+            size /= 1024
+        return f"{size:.2f} PB"
     
     def get_logger(self) -> logging.Logger:
         """
@@ -102,20 +159,72 @@ class LoggerManager:
         """
         self.logger.warning(message)
     
-    def error(self, message: str) -> None:
+    def error(self, message: str, exc_info: bool = True) -> None:
         """
         記錄錯誤信息
         
         Args:
             message: 日誌信息
+            exc_info: 是否包含異常信息
         """
-        self.logger.error(message)
+        if exc_info:
+            self.logger.error(f"{message}\n{traceback.format_exc()}")
+        else:
+            self.logger.error(message)
     
-    def critical(self, message: str) -> None:
+    def critical(self, message: str, exc_info: bool = True) -> None:
         """
         記錄嚴重錯誤信息
         
         Args:
             message: 日誌信息
+            exc_info: 是否包含異常信息
         """
-        self.logger.critical(message)
+        if exc_info:
+            self.logger.critical(f"{message}\n{traceback.format_exc()}")
+        else:
+            self.logger.critical(message)
+    
+    def log_download_progress(self, url: str, progress: float, status: str) -> None:
+        """
+        記錄下載進度
+        
+        Args:
+            url: 視頻URL
+            progress: 下載進度（0-100）
+            status: 下載狀態
+        """
+        self.info(f"下載進度 - URL: {url}, 進度: {progress:.2f}%, 狀態: {status}")
+    
+    def log_download_complete(self, url: str, output_path: str, duration: float) -> None:
+        """
+        記錄下載完成信息
+        
+        Args:
+            url: 視頻URL
+            output_path: 輸出文件路徑
+            duration: 下載耗時（秒）
+        """
+        self.info(f"下載完成 - URL: {url}, 保存路徑: {output_path}, 耗時: {duration:.2f}秒")
+    
+    def log_update_progress(self, component: str, progress: float, status: str) -> None:
+        """
+        記錄更新進度
+        
+        Args:
+            component: 組件名稱（yt-dlp/ffmpeg）
+            progress: 更新進度（0-100）
+            status: 更新狀態
+        """
+        self.info(f"更新進度 - 組件: {component}, 進度: {progress:.2f}%, 狀態: {status}")
+    
+    def log_update_complete(self, component: str, old_version: str, new_version: str) -> None:
+        """
+        記錄更新完成信息
+        
+        Args:
+            component: 組件名稱（yt-dlp/ffmpeg）
+            old_version: 舊版本
+            new_version: 新版本
+        """
+        self.info(f"更新完成 - 組件: {component}, 版本: {old_version} -> {new_version}")

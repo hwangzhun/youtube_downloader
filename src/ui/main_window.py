@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit,
     QProgressBar, QFileDialog, QRadioButton, QComboBox,
     QMessageBox, QGroupBox, QSplitter, QFrame, QStatusBar,
-    QAction, QMenu, QDialog, QSplashScreen
+    QAction, QMenu, QDialog, QSplashScreen, QProgressDialog
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
 from PyQt5.QtGui import QIcon, QFont, QPixmap
@@ -21,6 +21,7 @@ from PyQt5.QtGui import QIcon, QFont, QPixmap
 # 导入自定义模块
 from src.ui.download_tab import DownloadTab
 from src.ui.version_tab import VersionTab
+from src.core.version_manager import VersionManager
 from src.utils.logger import LoggerManager
 from src.utils.config import ConfigManager
 
@@ -66,15 +67,15 @@ class AboutDialog(QDialog):
             icon_label = QLabel()
             pixmap = QPixmap(icon_path)
             if not pixmap.isNull():
-                pixmap = pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                pixmap = pixmap.scaled(256, 256, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 icon_label.setPixmap(pixmap)
                 icon_label.setAlignment(Qt.AlignCenter)
                 layout.addWidget(icon_label)
         
         # 应用名称
-        app_name_label = QLabel("YouTube 视频下载工具")
+        app_name_label = QLabel("YouTube DownLoader")
         app_name_label.setAlignment(Qt.AlignCenter)
-        app_name_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        app_name_label.setStyleSheet("font-size: 18px; font-weight: normal;")
         layout.addWidget(app_name_label)
         
         # 版本信息
@@ -89,17 +90,18 @@ class AboutDialog(QDialog):
         layout.addWidget(separator)
         
         # 作者信息
-        author_label = QLabel("作者: Hwangzhun")
+        author_label = QLabel("By Hwangzhun")
         author_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(author_label)
         
         # 版权信息
-        copyright_label = QLabel("版权所有 © 2025 - MIT 许可证")
+        copyright_label = QLabel("许可：MIT 许可证")
         copyright_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(copyright_label)
         
         # GitHub 信息
-        github_label = QLabel("GitHub: ")
+        github_label = QLabel('<a href="https://github.com/hwangzhun/youtube_downloader">GitHub</a>')
+        github_label.setOpenExternalLinks(True)
         github_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(github_label)
         
@@ -144,17 +146,21 @@ class MainWindow(QMainWindow):
         self.logger = LoggerManager().get_logger()
         self.config_manager = ConfigManager()
         
+        # 初始化版本管理器
+        self.version_manager = VersionManager()
+        
         # 设置窗口属性
-        self.setWindowTitle("YouTube 视频下载工具 - Hwangzhun")
+        self.setWindowTitle("YouTube DownLoader- By Hwangzhun")
         self.setMinimumSize(800, 600)
         
         # 获取当前脚本所在目录
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        icon_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon.ico')
+        # icon_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon.ico')
+        icon_vertical_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon_vertical.ico')
         
         # 设置窗口图标
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
+        if os.path.exists(icon_vertical_path):
+            self.setWindowIcon(QIcon(icon_vertical_path))
         
         # 更新启动画面状态
         if self.splash_screen:
@@ -175,9 +181,15 @@ class MainWindow(QMainWindow):
         if self.splash_screen:
             self.splash_screen.finish(self)
         
+        # 检查并下载必要的二进制文件
+        self.check_binaries()
+        
         # 在后台线程中执行版本检查
         self.version_check_thread = VersionCheckThread(self.version_tab)
         self.version_check_thread.start()
+        
+        # 刷新版本信息标签页
+        self.version_tab.check_versions()
     
     def init_ui(self):
         """初始化 UI"""
@@ -207,9 +219,10 @@ class MainWindow(QMainWindow):
                 border-bottom: none;
                 border-top-left-radius: 3px;
                 border-top-right-radius: 3px;
-                padding: 8px 12px;
+                padding: 8px 20px;  /* 增加水平内边距 */
                 margin-right: 2px;
                 font-size: 14px;
+                min-width: 100px;  /* 设置最小宽度 */
             }
             QTabBar::tab:selected {
                 background-color: #0078D7;
@@ -250,7 +263,7 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("就绪")
         
         # 添加作者信息到状态栏
-        self.author_label = QLabel("作者: Hwangzhun | MIT 许可证")
+        self.author_label = QLabel("By Hwangzhun | MIT 许可")
         self.status_bar.addPermanentWidget(self.author_label)
         
         # 应用 Metro 风格
@@ -381,6 +394,35 @@ class MainWindow(QMainWindow):
                 color: white;
             }
         """)
+    
+    def check_binaries(self):
+        """检查并下载必要的二进制文件"""
+        try:
+            # 优先判断是否都存在
+            if self.version_manager.binaries_exist():
+                self.logger.info("二进制文件已存在，无需下载")
+                return
+            self.logger.info("开始检查二进制文件")
+            # 创建进度对话框
+            progress = QProgressDialog("正在检查必要的组件...", "取消", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setWindowTitle("初始化")
+            progress.setAutoClose(True)
+            progress.setAutoReset(True)
+            def update_progress(value, status):
+                progress.setValue(value)
+                progress.setLabelText(status)
+            # 检查并下载二进制文件
+            success, error = self.version_manager.check_and_download_binaries(update_progress)
+            if not success:
+                self.logger.error(f"检查二进制文件失败: {error}")
+                QMessageBox.critical(self, "错误", f"检查必要的组件时发生错误：\n{error}")
+                sys.exit(1)
+            self.logger.info("二进制文件检查完成")
+        except Exception as e:
+            self.logger.error(f"检查二进制文件时发生错误: {str(e)}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"检查必要的组件时发生错误：\n{str(e)}")
+            sys.exit(1)
     
     def closeEvent(self, event):
         """关闭窗口事件处理"""

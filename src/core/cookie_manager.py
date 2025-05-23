@@ -10,6 +10,13 @@ import tempfile
 import shutil
 from typing import Optional, Tuple, Dict
 
+# 添加 Windows 特定的导入
+if os.name == 'nt':
+    import subprocess
+    CREATE_NO_WINDOW = 0x08000000
+else:
+    CREATE_NO_WINDOW = 0
+
 
 class CookieManager:
     """Cookie 管理類"""
@@ -60,7 +67,12 @@ class CookieManager:
                     'https://www.youtube.com/'
                 ]
                 
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                result = subprocess.run(
+                    cmd, 
+                    capture_output=True, 
+                    text=True,
+                    creationflags=CREATE_NO_WINDOW if os.name == 'nt' else 0
+                )
                 
                 # 檢查是否成功提取 Cookie
                 if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:

@@ -132,10 +132,10 @@ class VersionTab(QWidget):
         # 初始化版本管理器
         self.version_manager = VersionManager()
         
-        # 确保二进制文件存在
-        success, error = self.version_manager.download_initial_binaries()
-        if not success:
-            QMessageBox.warning(self, "警告", f"无法下载必要的文件: {error}\n请检查网络连接后重试。")
+        # 不再自动下载二进制文件
+        # success, error = self.version_manager.download_initial_binaries()
+        # if not success:
+        #     QMessageBox.warning(self, "警告", f"无法下载必要的文件: {error}\n请检查网络连接后重试。")
         
         # 更新状态
         self.is_updating_yt_dlp = False
@@ -161,17 +161,27 @@ class VersionTab(QWidget):
         # 检查版本
         if auto_check:
             self.check_versions()
+        
+        # 获取当前脚本所在目录
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        icon_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon.ico')
+
+        # 设置窗口图标
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
     
     def init_ui(self):
         """初始化 UI"""
         # 创建主布局
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(20, 20, 20, 20)  # 增加边距
+        main_layout.setSpacing(15)  # 增加组件间距
         
         # 创建 yt-dlp 版本信息区域
         yt_dlp_group = QGroupBox("yt-dlp 版本信息")
         yt_dlp_layout = QVBoxLayout(yt_dlp_group)
+        yt_dlp_layout.setContentsMargins(15, 15, 15, 15)  # 增加组内边距
+        yt_dlp_layout.setSpacing(10)  # 增加组内间距
         
         # 当前版本
         current_version_layout = QHBoxLayout()
@@ -213,6 +223,8 @@ class VersionTab(QWidget):
         # 创建 ffmpeg 版本信息区域
         ffmpeg_group = QGroupBox("ffmpeg 版本信息")
         ffmpeg_layout = QVBoxLayout(ffmpeg_group)
+        ffmpeg_layout.setContentsMargins(15, 15, 15, 15)  # 增加组内边距
+        ffmpeg_layout.setSpacing(10)  # 增加组内间距
         
         # 当前版本
         current_version_layout = QHBoxLayout()
@@ -272,6 +284,10 @@ class VersionTab(QWidget):
     
     def check_versions(self):
         """检查版本"""
+        # 如果已经在检查中，直接返回
+        if hasattr(self, 'version_check_thread') and self.version_check_thread and self.version_check_thread.isRunning():
+            return
+            
         # 禁用检查更新按钮
         self.check_updates_button.setEnabled(False)
         
@@ -307,11 +323,17 @@ class VersionTab(QWidget):
         else:
             self.yt_dlp_latest_version_label.setText("无法获取")
         
-        if yt_dlp_has_update:
-            self.yt_dlp_download_url = yt_dlp_download_url
+        # 判断yt-dlp按钮状态
+        if not yt_dlp_success:
+            self.yt_dlp_update_button.setText("下载")
+            self.yt_dlp_update_button.setEnabled(True)
+            self.yt_dlp_status_label.setText("未安装，需下载")
+        elif yt_dlp_has_update:
+            self.yt_dlp_update_button.setText("更新")
             self.yt_dlp_update_button.setEnabled(True)
             self.yt_dlp_status_label.setText("有新版本可用")
         else:
+            self.yt_dlp_update_button.setText("更新")
             self.yt_dlp_update_button.setEnabled(False)
             self.yt_dlp_status_label.setText("已是最新版本")
         
@@ -328,11 +350,17 @@ class VersionTab(QWidget):
         else:
             self.ffmpeg_latest_version_label.setText("无法获取")
         
-        if ffmpeg_has_update:
-            self.ffmpeg_download_url = ffmpeg_download_url
+        # 判断ffmpeg按钮状态
+        if not ffmpeg_success:
+            self.ffmpeg_update_button.setText("下载")
+            self.ffmpeg_update_button.setEnabled(True)
+            self.ffmpeg_status_label.setText("未安装，需下载")
+        elif ffmpeg_has_update:
+            self.ffmpeg_update_button.setText("更新")
             self.ffmpeg_update_button.setEnabled(True)
             self.ffmpeg_status_label.setText("有新版本可用")
         else:
+            self.ffmpeg_update_button.setText("更新")
             self.ffmpeg_update_button.setEnabled(False)
             self.ffmpeg_status_label.setText("已是最新版本")
         
