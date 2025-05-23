@@ -1,5 +1,5 @@
 """
-YouTube 视频下载工具的主程序入口
+YouTube Downloader 的主程序入口
 """
 import os
 import sys

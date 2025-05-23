@@ -1,5 +1,5 @@
 """
-YouTube 视频下载工具的主窗口模块
+YouTube Downloader 的主窗口模块
 负责创建和管理主窗口界面
 """
 import os

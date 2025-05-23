@@ -3,13 +3,13 @@
 ![icon](https://raw.githubusercontent.com/hwangzhun/youtube_downloader/refs/heads/main/resources/icons/app_icon.png "YouTube DownLoader")
 ## 简介
 
-YouTube DownLoader 是一款基于 Python 开发的桌面应用程序，采用 PyQt5 构建用户界面，设计风格为 Metro 风格。用户可以通过该工具轻松下载 YouTube 视频，支持单条或多条视频链接批量下载，并提供多种实用功能。
+YouTube DownLoader 是一款基于 Python 开发的桌面应用程序，采用 PyQt5 构建用户界面，用户可以通过该工具轻松下载 YouTube 视频，支持单条或多条视频链接批量下载，并提供多种实用功能。
 
 ## 系统要求
 
 - **操作系统**：Windows 10 或 Windows 11  
 - **硬盘空间**：至少 200MB 可用空间  
-- **网络连接**：稳定的互联网连接  
+- **网络连接**：稳定的互联网连接  (科学上网)
 
 ## 主要功能
 
@@ -76,8 +76,4 @@ YouTube DownLoader 是一款基于 Python 开发的桌面应用程序，采用 P
 
 ## 免责声明
 
-<<<<<<< HEAD
 本工具仅供个人学习与研究使用，请遵守版权法规，勿用于商业用途或违反 YouTube 服务条款的行为。用户需自行承担因使用本工具而产生的法律责任。
-=======
-本工具仅供个人学习与研究使用，请遵守版权法规，勿用于商业用途或违反 YouTube 服务条款的行为。用户需自行承担因使用本工具而产生的法律责任。
->>>>>>> d5741a2d620177ff8f59b6e5981cda473bc1f941

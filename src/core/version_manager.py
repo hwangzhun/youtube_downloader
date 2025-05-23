@@ -305,19 +305,18 @@ class VersionManager:
             # 记录所有可用的资源
             for asset in release_info['assets']:
                 self.logger.info(f"检查资源: {asset['name']}")
+                # 优先选择 win64-gpl 静态版本
                 if 'win64-gpl' in asset['name'] and 'shared' not in asset['name'] and 'zip' in asset['name']:
                     download_url = asset['browser_download_url']
                     self.logger.info(f"找到匹配的下载链接: {download_url}")
                     break
             
+            # 如果没有找到合适的链接，尝试其他版本
             if not download_url:
-                error_msg = "未找到適合的下載鏈接"
-                self.logger.error(error_msg)
-                # 尝试使用备用方法获取下载链接
                 for asset in release_info['assets']:
                     if 'win64' in asset['name'] and 'gpl' in asset['name'] and 'zip' in asset['name']:
                         download_url = asset['browser_download_url']
-                        self.logger.info(f"使用备用方法找到下载链接: {download_url}")
+                        self.logger.info(f"使用备用下载链接: {download_url}")
                         break
             
             if not download_url:

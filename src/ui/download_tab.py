@@ -257,19 +257,20 @@ class DownloadTab(QWidget):
         
         # 不使用 Cookie 选项
         self.no_cookie_radio = QRadioButton("不使用 Cookie")
-        self.no_cookie_radio.setChecked(not self.config_manager.get('use_cookies', True))
+        self.no_cookie_radio.setChecked(True)  # 默认选中不使用 Cookie
         self.no_cookie_radio.toggled.connect(self.toggle_cookie_mode)
         cookie_layout.addWidget(self.no_cookie_radio)
         
         # 自动获取 Cookie 选项
         self.auto_cookie_radio = QRadioButton("自动从浏览器获取 Cookie")
-        self.auto_cookie_radio.setChecked(self.config_manager.get('auto_cookies', True) and self.config_manager.get('use_cookies', True))
+        self.auto_cookie_radio.setChecked(False)  # 默认不选中
         self.auto_cookie_radio.toggled.connect(self.toggle_cookie_mode)
         cookie_layout.addWidget(self.auto_cookie_radio)
         
         # 手动导入 Cookie 选项
         self.manual_cookie_radio = QRadioButton("手动导入 Cookie 文件")
-        self.manual_cookie_radio.setChecked(not self.config_manager.get('auto_cookies', True) and self.config_manager.get('use_cookies', True))
+        self.manual_cookie_radio.setChecked(False)  # 默认不选中
+        self.manual_cookie_radio.toggled.connect(self.toggle_cookie_mode)
         cookie_layout.addWidget(self.manual_cookie_radio)
         
         # Cookie 文件路径

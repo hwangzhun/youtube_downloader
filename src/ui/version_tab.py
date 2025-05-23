@@ -33,7 +33,7 @@ class UpdateWorker(QThread):
         
         Args:
             version_manager: 版本管理器
-            update_type: 更新类型，'yt-dlp' 或 'ffmpeg'
+            update_type: 更新类型，'yt-dlp' 或 'ffmpeg' 或 'init'
             download_url: 下载URL
         """
         super().__init__()
@@ -44,18 +44,23 @@ class UpdateWorker(QThread):
     def run(self):
         """执行更新任务"""
         try:
-            if self.update_type == 'yt-dlp':
+            if self.update_type == 'init':
+                success, error = self.version_manager.check_and_download_binaries(
+                    self._progress_callback
+                )
+                self.update_completed.emit(success, "" if success else error)
+            elif self.update_type == 'yt-dlp':
                 success, version = self.version_manager.update_yt_dlp(
                     self.download_url,
                     self._progress_callback
                 )
+                self.update_completed.emit(success, version if success else "更新失败")
             else:  # ffmpeg
                 success, version = self.version_manager.update_ffmpeg(
                     self.download_url,
                     self._progress_callback
                 )
-            
-            self.update_completed.emit(success, version if success else "更新失败")
+                self.update_completed.emit(success, version if success else "更新失败")
         except Exception as e:
             self.update_completed.emit(False, str(e))
     
@@ -132,11 +137,6 @@ class VersionTab(QWidget):
         # 初始化版本管理器
         self.version_manager = VersionManager()
         
-        # 不再自动下载二进制文件
-        # success, error = self.version_manager.download_initial_binaries()
-        # if not success:
-        #     QMessageBox.warning(self, "警告", f"无法下载必要的文件: {error}\n请检查网络连接后重试。")
-        
         # 更新状态
         self.is_updating_yt_dlp = False
         self.is_updating_ffmpeg = False
@@ -158,8 +158,11 @@ class VersionTab(QWidget):
         # 记录日志
         self.logger.info("版本标签页初始化完成")
         
-        # 检查版本
-        if auto_check:
+        # 检查二进制文件是否存在
+        if not self.version_manager.binaries_exist():
+            self.logger.info("检测到缺少必要的二进制文件，开始初始化下载")
+            self.init_binaries()
+        elif auto_check:
             self.check_versions()
         
         # 获取当前脚本所在目录
@@ -323,12 +326,15 @@ class VersionTab(QWidget):
         else:
             self.yt_dlp_latest_version_label.setText("无法获取")
         
+        # 保存下载链接
+        self.yt_dlp_download_url = yt_dlp_download_url
+        
         # 判断yt-dlp按钮状态
         if not yt_dlp_success:
             self.yt_dlp_update_button.setText("下载")
             self.yt_dlp_update_button.setEnabled(True)
             self.yt_dlp_status_label.setText("未安装，需下载")
-        elif yt_dlp_has_update:
+        elif yt_dlp_has_update and yt_dlp_download_url:
             self.yt_dlp_update_button.setText("更新")
             self.yt_dlp_update_button.setEnabled(True)
             self.yt_dlp_status_label.setText("有新版本可用")
@@ -350,12 +356,15 @@ class VersionTab(QWidget):
         else:
             self.ffmpeg_latest_version_label.setText("无法获取")
         
+        # 保存下载链接
+        self.ffmpeg_download_url = ffmpeg_download_url
+        
         # 判断ffmpeg按钮状态
         if not ffmpeg_success:
             self.ffmpeg_update_button.setText("下载")
             self.ffmpeg_update_button.setEnabled(True)
             self.ffmpeg_status_label.setText("未安装，需下载")
-        elif ffmpeg_has_update:
+        elif ffmpeg_has_update and ffmpeg_download_url:
             self.ffmpeg_update_button.setText("更新")
             self.ffmpeg_update_button.setEnabled(True)
             self.ffmpeg_status_label.setText("有新版本可用")
@@ -546,3 +555,59 @@ class VersionTab(QWidget):
             
             # 更新状态栏
             self.update_status_message(f"ffmpeg 更新失败: {result}")
+
+    def init_binaries(self):
+        """初始化下载必要的二进制文件"""
+        # 更新状态
+        self.yt_dlp_status_label.setText("正在初始化下载...")
+        self.ffmpeg_status_label.setText("正在初始化下载...")
+        
+        # 更新状态栏
+        self.update_status_message("正在初始化下载必要的文件...")
+        
+        # 创建并启动初始化下载线程
+        self.init_worker = UpdateWorker(
+            version_manager=self.version_manager,
+            update_type='init',
+            download_url=None
+        )
+        
+        # 连接信号
+        self.init_worker.progress_updated.connect(self.update_init_progress)
+        self.init_worker.update_completed.connect(self.init_completed)
+        
+        # 启动工作线程
+        self.init_worker.start()
+    
+    def update_init_progress(self, progress, status):
+        """更新初始化进度"""
+        self.yt_dlp_progress_bar.setValue(progress)
+        self.ffmpeg_progress_bar.setValue(progress)
+        self.yt_dlp_status_label.setText(status)
+        self.ffmpeg_status_label.setText(status)
+        
+        # 更新状态栏
+        self.update_status_message(f"初始化下载: {progress}% - {status}")
+    
+    def init_completed(self, success, result):
+        """初始化完成"""
+        if success:
+            # 更新状态
+            self.yt_dlp_status_label.setText("初始化完成")
+            self.ffmpeg_status_label.setText("初始化完成")
+            
+            # 更新状态栏
+            self.update_status_message("初始化下载完成")
+            
+            # 检查版本
+            self.check_versions()
+        else:
+            # 更新状态
+            self.yt_dlp_status_label.setText(f"初始化失败: {result}")
+            self.ffmpeg_status_label.setText(f"初始化失败: {result}")
+            
+            # 更新状态栏
+            self.update_status_message(f"初始化下载失败: {result}")
+            
+            # 显示错误消息
+            QMessageBox.critical(self, "初始化失败", f"无法下载必要的文件: {result}\n请检查网络连接后重试。")
