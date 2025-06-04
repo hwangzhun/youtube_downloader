@@ -1,5 +1,5 @@
 """
-YouTube 视频下载工具的版本标签页模块
+YouTube Downloader 版本标签页模块
 负责创建和管理版本标签页界面
 """
 import os
@@ -283,7 +283,7 @@ class VersionTab(QWidget):
         """更新状态栏消息"""
         if self.status_bar:
             # 使用 QTimer.singleShot 确保在主线程中更新 UI
-            QTimer.singleShot(0, lambda: self.status_bar.showMessage(message, 5000))  # 显示5秒
+            QTimer.singleShot(0, lambda: self.status_bar.showMessage(message))
     
     def check_versions(self):
         """检查版本"""

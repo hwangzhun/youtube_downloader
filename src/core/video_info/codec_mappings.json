@@ -1,0 +1,20 @@
+{
+    "video_codecs": {
+        "vp09": "VP9",
+        "vp9": "VP9",
+        "avc1": "H.264",
+        "avc": "H.264",
+        "h264": "H.264",
+        "av01": "AV1",
+        "av1": "AV1",
+        "hev1": "H.265",
+        "h265": "H.265",
+        "hevc": "H.265"
+    },
+    "audio_codecs": {
+        "mp4a": "AAC",
+        "aac": "AAC",
+        "opus": "Opus",
+        "vorbis": "Vorbis"
+    }
+} 

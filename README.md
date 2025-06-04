@@ -1,9 +1,18 @@
 # YouTube DownLoader 视频下载工具使用说明
 
-![icon](https://cdn.jsdelivr.net/gh/hwangzhun/youtube_downloader@main/resources/icons/app_icon.png)
+![icon](https://cdn.jsdelivr.net/gh/hwangzhun/youtube_downloader@main/resources/icons/app_icon.png "YouTube DownLoader")
+
 ## 简介
 
-YouTube DownLoader 是一款基于 Python 开发的桌面应用程序，采用 PyQt5 构建用户界面，用户可以通过该工具轻松下载 YouTube 视频，支持单条或多条视频链接批量下载，并提供多种实用功能。
+YouTube DownLoader 是一款基于 Python 开发的免费开源桌面应用程序，采用 PyQt5 构建用户界面。市面上大多数 YouTube 下载工具要么收费，要么对普通用户不够友好，因此我们开发了这款简单易用的下载工具。用户可以通过该工具轻松下载 YouTube 视频，支持单条或多条视频链接批量下载，并提供多种实用功能。
+
+## 更新日志
+
+### v1.1.0 (2025-06-04)
+- 优化了视频信息解析逻辑，提高解析速度和稳定性
+- 改进了从浏览器获取 Cookie 的方式，支持更多浏览器
+- 新增 Cookie 有效性验证功能，确保下载权限
+- 修复了已知问题，提升整体稳定性
 
 ## 系统要求
 

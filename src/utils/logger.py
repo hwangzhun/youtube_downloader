@@ -14,6 +14,12 @@ from typing import Dict
 
 class LoggerManager:
     """日志管理类"""
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(LoggerManager, cls).__new__(cls)
+        return cls._instance
     
     def __init__(self, log_file: str = None, log_level: int = logging.INFO):
         """
@@ -23,6 +29,10 @@ class LoggerManager:
             log_file: 日志文件路径，如果为 None 则使用默认路径
             log_level: 日志级别
         """
+        # 如果已经初始化过，直接返回
+        if hasattr(self, 'logger'):
+            return
+            
         # 获取应用程序数据目录
         if sys.platform.startswith('win'):
             app_data_dir = os.path.join(os.environ.get('APPDATA', ''), 'YouTubeDownloader', 'logs')
@@ -76,43 +86,33 @@ class LoggerManager:
     def _log_system_info(self):
         """记录系统信息"""
         system_info = self._get_system_info()
-        self.info(f"系统信息: {system_info}")
+        
+        # 构建格式化的系统信息字符串
+        formatted_info = "系统信息:\n"
+        formatted_info += f"操作系统: {system_info['操作系统']}\n"
+        formatted_info += f"Python版本: {system_info['Python版本']}\n"
+        formatted_info += f"处理器: {system_info['处理器']}"
+        
+        self.info(formatted_info)
     
     def _get_system_info(self) -> Dict[str, str]:
         """获取系统信息"""
         try:
             import platform
-            import psutil
             
             info = {
-                'platform': platform.platform(),
-                'python_version': platform.python_version(),
-                'processor': platform.processor(),
+                '操作系统': platform.platform(),
+                'Python版本': platform.python_version(),
+                '处理器': platform.processor(),
             }
-            
-            # 获取内存信息
-            try:
-                memory = psutil.virtual_memory()
-                info['memory'] = f"总内存: {self._format_size(memory.total)}, 可用: {self._format_size(memory.available)}"
-            except:
-                info['memory'] = "无法获取内存信息"
-            
-            # 获取磁盘空间信息
-            try:
-                disk = psutil.disk_usage('/')
-                info['disk_space'] = f"总空间: {self._format_size(disk.total)}, 可用: {self._format_size(disk.free)}"
-            except:
-                info['disk_space'] = "无法获取磁盘空间信息"
             
             return info
         except Exception as e:
             self.logger.error(f"获取系统信息时发生错误: {str(e)}", exc_info=True)
             return {
-                'platform': platform.platform(),
-                'python_version': platform.python_version(),
-                'processor': platform.processor(),
-                'memory': "无法获取内存信息",
-                'disk_space': "无法获取磁盘空间信息"
+                '操作系统': platform.platform(),
+                'Python版本': platform.python_version(),
+                '处理器': platform.processor(),
             }
     
     def _format_size(self, size: int) -> str:

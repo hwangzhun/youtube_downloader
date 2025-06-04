@@ -27,6 +27,7 @@ def build_exe():
         "--windowed",  # 不显示控制台窗口
         "--icon=resources/icons/app_icon.ico",
         "--add-data=resources;resources",  # 添加资源文件
+        "--add-data=src/config;src/config",  # 添加配置文件
         "--hidden-import=PyQt5",
         "--hidden-import=PyQt5.QtCore",
         "--hidden-import=PyQt5.QtGui",

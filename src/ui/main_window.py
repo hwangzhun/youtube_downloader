@@ -24,7 +24,8 @@ from src.ui.version_tab import VersionTab
 from src.core.version_manager import VersionManager
 from src.utils.logger import LoggerManager
 from src.utils.config import ConfigManager
-
+from src.ui.cookie_tab import CookieTab
+from src.config.get_software_version import get_software_version
 
 class VersionCheckThread(QThread):
     """版本检查线程类"""
@@ -37,7 +38,7 @@ class VersionCheckThread(QThread):
     def run(self):
         """执行版本检查"""
         # 延迟一段时间再执行版本检查，避免影响启动速度
-        self.msleep(1000)  # 延迟1秒
+        self.msleep(500)  # 延迟500毫秒
         self.version_tab.check_versions()
 
 
@@ -79,7 +80,7 @@ class AboutDialog(QDialog):
         layout.addWidget(app_name_label)
         
         # 版本信息
-        version_label = QLabel("版本 1.0.0")
+        version_label = QLabel(f"版本 v{get_software_version()}")
         version_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(version_label)
         
@@ -130,12 +131,13 @@ class AboutDialog(QDialog):
 class MainWindow(QMainWindow):
     """主窗口类"""
     
-    def __init__(self, splash_screen=None):
+    def __init__(self, splash_screen=None, skip_update_check=False):
         """
         初始化主窗口
         
         Args:
             splash_screen: 启动画面
+            skip_update_check: 是否跳过更新检查
         """
         super().__init__()
         
@@ -150,7 +152,7 @@ class MainWindow(QMainWindow):
         self.version_manager = VersionManager()
         
         # 设置窗口属性
-        self.setWindowTitle("YouTube DownLoader- By Hwangzhun")
+        self.setWindowTitle(f"YouTube DownLoader - v{get_software_version()}")
         self.setMinimumSize(800, 600)
         
         # 获取当前脚本所在目录
@@ -162,34 +164,20 @@ class MainWindow(QMainWindow):
         if os.path.exists(icon_vertical_path):
             self.setWindowIcon(QIcon(icon_vertical_path))
         
-        # 更新启动画面状态
-        if self.splash_screen:
-            self.splash_screen.showMessage("正在初始化界面...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
-        
         # 初始化 UI
         self.init_ui()
         
-        # 记录日志
-        self.logger.info("主窗口初始化完成")
+        # 初始化更新检查
+        if not skip_update_check:
+            self.check_updates()
         
-        # 延迟执行版本检查
-        QTimer.singleShot(500, self.delayed_initialization)
-    
-    def delayed_initialization(self):
-        """延迟初始化，在主界面显示后执行"""
         # 关闭启动画面
         if self.splash_screen:
             self.splash_screen.finish(self)
+            self.splash_screen = None
         
-        # 检查并下载必要的二进制文件
-        self.check_binaries()
-        
-        # 在后台线程中执行版本检查
-        self.version_check_thread = VersionCheckThread(self.version_tab)
-        self.version_check_thread.start()
-        
-        # 刷新版本信息标签页
-        self.version_tab.check_versions()
+        # 记录日志
+        self.logger.info("主窗口初始化完成")
     
     def init_ui(self):
         """初始化 UI"""
@@ -203,7 +191,7 @@ class MainWindow(QMainWindow):
         
         # 更新启动画面状态
         if self.splash_screen:
-            self.splash_screen.showMessage("正在加载界面组件...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+            self.splash_screen.showMessage("正在加载界面组件...", Qt.AlignBottom | Qt.AlignCenter, Qt.black)
         
         # 创建标签页
         self.tab_widget = QTabWidget()
@@ -239,19 +227,17 @@ class MainWindow(QMainWindow):
         
         # 更新启动画面状态
         if self.splash_screen:
-            self.splash_screen.showMessage("正在加载下载模块...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+            self.splash_screen.showMessage("正在加载下载模块...", Qt.AlignBottom | Qt.AlignCenter, Qt.black)
         
         # 创建下载标签页
-        self.download_tab = DownloadTab(self.config_manager, self.status_bar)
-        self.tab_widget.addTab(self.download_tab, "下载")
-        
-        # 更新启动画面状态
-        if self.splash_screen:
-            self.splash_screen.showMessage("正在加载版本信息模块...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
-        
-        # 创建版本标签页 - 不立即检查版本
+        self.cookie_tab = CookieTab(self.status_bar)
+        self.download_tab = DownloadTab(self.config_manager, self.status_bar, self.cookie_tab)
         self.version_tab = VersionTab(self.status_bar, auto_check=False)
-        self.tab_widget.addTab(self.version_tab, "版本信息")
+        
+        # 添加标签页
+        self.tab_widget.addTab(self.download_tab, "下载")
+        self.tab_widget.addTab(self.cookie_tab, "Cookie")
+        self.tab_widget.addTab(self.version_tab, "版本")
         
         # 添加标签页到主布局
         main_layout.addWidget(self.tab_widget)
@@ -394,6 +380,14 @@ class MainWindow(QMainWindow):
                 color: white;
             }
         """)
+    
+    def check_updates(self):
+        """检查更新"""
+        try:
+            # TODO: 实现更新检查逻辑
+            pass
+        except Exception as e:
+            self.logger.error(f"检查更新失败: {str(e)}")
     
     def check_binaries(self):
         """检查并下载必要的二进制文件"""

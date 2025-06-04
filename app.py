@@ -9,6 +9,8 @@ from PyQt5.QtCore import Qt
 
 from src.ui.main_window import MainWindow
 from src.utils.logger import LoggerManager
+from src.core.video_info.format_parser import FormatParser, VideoInfoCache
+from src.config.get_software_version import get_software_version
 
 
 def main():
@@ -37,7 +39,7 @@ def main():
             splash = QSplashScreen(splash_pixmap)
             splash.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.SplashScreen)
             splash.show()
-            splash.showMessage("正在加载应用程序...", Qt.AlignBottom | Qt.AlignCenter, Qt.white)
+            splash.showMessage("正在加载应用程序...", Qt.AlignBottom | Qt.AlignCenter, Qt.black)
             app.processEvents()
     
     # 创建主窗口

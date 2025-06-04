@@ -1,5 +1,5 @@
 """
-YouTube 視頻下載工具的 Cookie 管理模塊
+YouTube DownLoader Cookie 管理模塊
 負責處理 Cookie 的獲取、導入和使用
 """
 import os

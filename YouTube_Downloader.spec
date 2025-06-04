@@ -5,7 +5,7 @@ a = Analysis(
     ['src\\main.py'],
     pathex=['.'],
     binaries=[],
-    datas=[('resources', 'resources')],
+    datas=[('resources', 'resources'), ('src/config', 'src/config')],
     hiddenimports=['PyQt5', 'PyQt5.QtCore', 'PyQt5.QtGui', 'PyQt5.QtWidgets', 'yt_dlp', 'ffmpeg'],
     hookspath=[],
     hooksconfig={},
