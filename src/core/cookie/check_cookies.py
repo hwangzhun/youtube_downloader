@@ -3,6 +3,10 @@ import os
 from typing import Dict, Optional, Tuple
 import re
 
+from src.utils.logger import LoggerManager
+
+logger = LoggerManager().get_logger()
+
 def parse_netscape_cookies(file_path: str) -> Dict[str, str]:
     """
     解析 Netscape 格式的 cookie 文件
@@ -69,7 +73,7 @@ def verify_cookie(cookie_file: str) -> Tuple[bool, str, Optional[str], Optional[
         # 保存响应内容到文件
         with open('youtube_response.html', 'w', encoding='utf-8') as f:
             f.write(response.text)
-        print("响应内容已保存到 youtube_response.html")
+        logger.debug("响应内容已保存到 youtube_response.html")
         
         # 检查响应状态
         if response.status_code != 200:
@@ -99,14 +103,14 @@ def verify_cookie(cookie_file: str) -> Tuple[bool, str, Optional[str], Optional[
             user_id = channel_id_match.group(1)
             if username_match:
                 username = username_match.group(1)
-                print(f"成功获取到用户信息: @{username}")
-                print(f"频道ID: {user_id}")
+                logger.info(f"成功获取到用户信息: @{username}")
+                logger.info(f"频道ID: {user_id}")
                 return True, "Cookie 有效", user_id, username
             else:
-                print("无法获取用户名")
+                logger.info("无法获取用户名")
                 return False, "无法获取用户名", user_id, None
         else:
-            print("无法获取频道ID")
+            logger.info("无法获取频道ID")
             return False, "无法获取频道ID", None, None
             
     except Exception as e:
@@ -129,13 +133,13 @@ def main():
     try:
         is_valid, message, user_id, username = verify_cookie(args.cookie_file)
         if is_valid:
-            print("✅", message)
-            print("用户 ID:", user_id)
-            print("用户名:", username)
+            logger.info("✅ " + message)
+            logger.info("用户 ID: " + str(user_id))
+            logger.info("用户名: " + str(username))
         else:
-            print("❌", message)
+            logger.info("❌ " + message)
     except Exception as e:
-        print("❌ 验证失败:", str(e))
+        logger.error(f"❌ 验证失败: {str(e)}")
 
 if __name__ == "__main__":
     main()
