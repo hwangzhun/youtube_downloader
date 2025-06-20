@@ -6,6 +6,9 @@ import os
 import json
 import sys
 from typing import Dict, Any, Optional
+from src.utils.logger import LoggerManager
+
+logger = LoggerManager().get_logger()
 
 
 class ConfigManager:
@@ -64,7 +67,7 @@ class ConfigManager:
                 merged_config.update(config)
                 return merged_config
             except Exception as e:
-                print(f"加载配置文件时发生错误: {str(e)}")
+                logger.error(f"加载配置文件时发生错误: {str(e)}")
                 return self.default_config.copy()
         else:
             return self.default_config.copy()
@@ -81,7 +84,7 @@ class ConfigManager:
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
-            print(f"保存配置文件時發生錯誤: {str(e)}")
+            logger.error(f"保存配置文件時發生錯誤: {str(e)}")
             return False
     
     def get(self, key: str, default: Any = None) -> Any:

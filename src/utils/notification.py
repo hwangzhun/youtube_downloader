@@ -6,6 +6,9 @@ import os
 import sys
 import tempfile
 from typing import Optional
+from src.utils.logger import LoggerManager
+
+logger = LoggerManager().get_logger()
 
 
 class NotificationManager:
@@ -150,5 +153,5 @@ class NotificationManager:
                     threaded=True
                 )
         except Exception as e:
-            print(f"显示通知时发生错误: {str(e)}")
+            logger.error(f"显示通知时发生错误: {str(e)}")
             return False

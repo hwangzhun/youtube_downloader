@@ -1,5 +1,8 @@
 import os
 import json
+from src.utils.logger import LoggerManager
+
+logger = LoggerManager().get_logger()
 
 def get_software_version():
     """获取软件版本号"""
@@ -9,7 +12,7 @@ def get_software_version():
             config = json.load(f)
             return config['software_version']
     except Exception as e:
-        print(f"读取配置文件失败: {str(e)}")
+        logger.error(f"读取配置文件失败: {str(e)}")
         return 'unll'
     
 # print(get_software_version())
