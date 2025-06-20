@@ -2,6 +2,9 @@ import json
 import os
 from typing import Dict, List, Optional
 from datetime import datetime
+from src.utils.logger import LoggerManager
+
+logger = LoggerManager().get_logger()
 
 class FormatParser:
     """格式解析器类"""
@@ -22,7 +25,7 @@ class FormatParser:
             with open(mapping_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"加载编码映射表失败: {str(e)}")
+            logger.error(f"加载编码映射表失败: {str(e)}")
             return {"video_codecs": {}, "audio_codecs": {}}
 
     def get_available_formats(self, video_info: Dict) -> List[Dict]:

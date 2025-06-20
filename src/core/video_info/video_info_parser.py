@@ -4,6 +4,9 @@ import json
 import subprocess
 from typing import Dict, List, Optional
 from datetime import datetime
+from src.utils.logger import LoggerManager
+
+logger = LoggerManager().get_logger()
 
 # 添加 Windows 特定的导入
 if os.name == 'nt':
@@ -55,7 +58,7 @@ class VideoInfoCache:
                     'data': data
                 }, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"保存缓存失败: {str(e)}")
+            logger.error(f"保存缓存失败: {str(e)}")
     
     def load_from_cache(self, url: str, max_age_hours: int = 24) -> Optional[Dict]:
         """从缓存加载数据"""
@@ -74,7 +77,7 @@ class VideoInfoCache:
                 
             return cache_data['data']
         except Exception as e:
-            print(f"读取缓存失败: {str(e)}")
+            logger.error(f"读取缓存失败: {str(e)}")
             return None
 
 
@@ -83,10 +86,10 @@ class VideoInfoParser:
         # 获取基础目录
         current_dir = os.path.dirname(os.path.abspath(__file__))  # src/core/video_info
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))  # 项目根目录
-        print(f"基础目录: {base_dir}")
+        logger.debug(f"基础目录: {base_dir}")
         self.yt_dlp_path = os.path.join(base_dir, 'resources', 'binaries', 'yt-dlp', 'yt-dlp.exe')
-        print(f"yt-dlp路径: {self.yt_dlp_path}")
-        print(f"文件是否存在: {os.path.exists(self.yt_dlp_path)}")
+        logger.debug(f"yt-dlp路径: {self.yt_dlp_path}")
+        logger.debug(f"文件是否存在: {os.path.exists(self.yt_dlp_path)}")
         self.cache = VideoInfoCache()
         self.format_parser = FormatParser()
 
@@ -106,7 +109,7 @@ class VideoInfoParser:
                 return result
             return None
         except Exception as e:
-            print(f"错误详情: {str(e)}")
+            logger.error(f"错误详情: {str(e)}")
             raise Exception(f"解析失败：{str(e)}")
 
     def parse_video_info(self, url: str) -> Dict:
@@ -203,20 +206,20 @@ def main():
         
         # 获取基本信息
         basic_info = parser.get_basic_info(video_info)
-        print(f"标题: {basic_info['title']}")
-        print(f"时长: {parser.format_duration(basic_info['duration'])}")
-        print(f"上传者: {basic_info['uploader']}")
+        logger.info(f"标题: {basic_info['title']}")
+        logger.info(f"时长: {parser.format_duration(basic_info['duration'])}")
+        logger.info(f"上传者: {basic_info['uploader']}")
         
         # 获取可用格式
         formats = parser.get_available_formats(video_info)
         formatted_formats = parser.get_formatted_formats(formats)
         
-        print("\n可用格式:")
+        logger.info("\n可用格式:")
         for f in formatted_formats:
-            print(f"ID: {f['format_id']} - {f['display']}")
+            logger.info(f"ID: {f['format_id']} - {f['display']}")
             
     except Exception as e:
-        print(f"错误: {str(e)}")
+        logger.error(f"错误: {str(e)}")
 
 if __name__ == "__main__":
     main() 
