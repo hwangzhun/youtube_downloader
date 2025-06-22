@@ -172,6 +172,17 @@ class FormatParser:
         base_codec = codec.split('.')[0]
         return base_codec.upper()  # 转换为大写以保持一致性
 
+    @staticmethod
+    def parse_formats(formats: List[Dict], duration: float) -> List[Dict]:
+        """解析并格式化 yt-dlp 输出的格式列表"""
+        parser = FormatParser()
+        video_info = {
+            'formats': formats,
+            'duration': duration,
+        }
+        available = parser.get_available_formats(video_info)
+        return parser.get_formatted_formats(available)
+
     def get_formatted_formats(self, formats: List[Dict]) -> List[Dict]:
         """格式化格式信息，使其更易读"""
         if not formats:
