@@ -1,6 +1,6 @@
 # YouTube DownLoader 视频下载工具使用说明
 
-![icon](https://cdn.jsdelivr.net/gh/hwangzhun/youtube_downloader@main/resources/icons/app_icon.png "YouTube DownLoader")
+![icon](https://cdn.jsdelivr.net/gh/hwangzhun/youtube_downloader@main/resources/icons/app_icon_horizontal.png "YouTube DownLoader")
 
 ## 简介
 
