@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QTextEdit, QPushButton,
     QMessageBox, QTableWidget, QTableWidgetItem, QComboBox, QLabel, QStatusBar
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
 from src.core.video_info.video_info_parser import VideoInfoParser
 from src.utils.logger import LoggerManager
@@ -27,6 +27,31 @@ class BatchDownloadTab(QWidget):
         self.video_info_parser = VideoInfoParser()
 
         self.init_ui()
+
+    class BatchParseThread(QThread):
+        """批量解析线程"""
+        video_parsed = pyqtSignal(int, dict, list)
+        progress_updated = pyqtSignal(str)
+        parse_finished = pyqtSignal()
+
+        def __init__(self, parser: VideoInfoParser, urls: list):
+            super().__init__()
+            self.parser = parser
+            self.urls = urls
+
+        def run(self):
+            for index, url in enumerate(self.urls, start=1):
+                try:
+                    self.progress_updated.emit(f"正在解析第 {index} 个视频...")
+                    info = self.parser.parse_video(url)
+                    basic = self.parser.get_basic_info(info)
+                    fmts = self.parser.get_available_formats(info)
+                    formatted = self.parser.get_formatted_formats(fmts)
+                    self.video_parsed.emit(index, basic, formatted)
+                except Exception as e:
+                    self.video_parsed.emit(index, {'error': str(e)}, [])
+            self.progress_updated.emit("解析完成")
+            self.parse_finished.emit()
 
     def init_ui(self):
         """初始化界面"""
@@ -82,31 +107,40 @@ class BatchDownloadTab(QWidget):
             return
 
         self.table.setRowCount(0)
-        for index, url in enumerate(urls, start=1):
-            try:
-                self.update_status(f"正在解析第 {index} 个视频...")
-                video_info = self.video_info_parser.parse_video(url)
-                basic = self.video_info_parser.get_basic_info(video_info)
-                formats = self.video_info_parser.get_available_formats(video_info)
-                formatted = self.video_info_parser.get_formatted_formats(formats)
-            except Exception as e:
-                self.logger.error(f"解析失败: {str(e)}")
-                QMessageBox.critical(self, "错误", f"解析失败：{str(e)}")
-                continue
+        self.parse_button.setEnabled(False)
 
-            row = self.table.rowCount()
-            self.table.insertRow(row)
+        # 创建并启动解析线程
+        self.parse_thread = self.BatchParseThread(self.video_info_parser, urls)
+        self.parse_thread.video_parsed.connect(self.on_video_parsed)
+        self.parse_thread.progress_updated.connect(self.update_status)
+        self.parse_thread.parse_finished.connect(self.on_parse_finished)
+        self.parse_thread.start()
+
+    def on_video_parsed(self, index: int, basic: dict, formats: list):
+        """单个视频解析完成回调"""
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+
+        if 'error' in basic:
             self.table.setItem(row, 0, QTableWidgetItem(str(index)))
-            self.table.setItem(row, 1, QTableWidgetItem(basic['title']))
-            self.table.setItem(row, 2, QTableWidgetItem(
-                self.video_info_parser.format_duration(basic['duration'])
-            ))
+            self.table.setItem(row, 1, QTableWidgetItem("解析失败"))
+            self.table.setItem(row, 2, QTableWidgetItem("-"))
+            self.table.setItem(row, 3, QTableWidgetItem(basic['error']))
+            return
 
-            combo = QComboBox()
-            combo.addItem("最高画质 (自动)", "best")
-            for fmt in formatted:
-                if fmt['type'] == 'video':
-                    combo.addItem(fmt['display'], fmt['format_id'])
-            self.table.setCellWidget(row, 3, combo)
+        self.table.setItem(row, 0, QTableWidgetItem(str(index)))
+        self.table.setItem(row, 1, QTableWidgetItem(basic['title']))
+        self.table.setItem(row, 2, QTableWidgetItem(
+            self.video_info_parser.format_duration(basic['duration'])
+        ))
 
-        self.update_status("解析完成")
+        combo = QComboBox()
+        combo.addItem("最高画质 (自动)", "best")
+        for fmt in formats:
+            if isinstance(fmt, dict) and fmt.get('type') == 'video':
+                combo.addItem(fmt['display'], fmt['format_id'])
+        self.table.setCellWidget(row, 3, combo)
+
+    def on_parse_finished(self):
+        self.parse_button.setEnabled(True)
+
