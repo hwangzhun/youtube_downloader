@@ -20,6 +20,7 @@ from PyQt5.QtGui import QIcon, QFont, QPixmap
 
 # 导入自定义模块
 from src.ui.download_tab import DownloadTab
+from src.ui.batch_download_tab import BatchDownloadTab
 from src.ui.version_tab import VersionTab
 from src.core.version_manager import VersionManager
 from src.utils.logger import LoggerManager
@@ -229,13 +230,15 @@ class MainWindow(QMainWindow):
         if self.splash_screen:
             self.splash_screen.showMessage("正在加载下载模块...", Qt.AlignBottom | Qt.AlignCenter, Qt.black)
         
-        # 创建下载标签页
+        # 创建各标签页
         self.cookie_tab = CookieTab(self.status_bar)
         self.download_tab = DownloadTab(self.config_manager, self.status_bar, self.cookie_tab)
+        self.batch_download_tab = BatchDownloadTab(self.config_manager, self.status_bar)
         self.version_tab = VersionTab(self.status_bar, auto_check=False)
         
         # 添加标签页
         self.tab_widget.addTab(self.download_tab, "下载")
+        self.tab_widget.addTab(self.batch_download_tab, "批量下载")
         self.tab_widget.addTab(self.cookie_tab, "Cookie")
         self.tab_widget.addTab(self.version_tab, "版本")
         
