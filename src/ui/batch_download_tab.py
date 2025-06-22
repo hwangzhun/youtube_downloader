@@ -3,13 +3,18 @@
 提供解析多条视频信息并选择质量的界面
 """
 
+import os
+
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QTextEdit, QPushButton,
-    QMessageBox, QTableWidget, QTableWidgetItem, QComboBox, QLabel, QStatusBar
+    QMessageBox, QTableWidget, QTableWidgetItem, QComboBox, QLabel, QStatusBar,
+    QLineEdit, QProgressBar, QFileDialog, QRadioButton
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
 from src.core.video_info.video_info_parser import VideoInfoParser
+from src.core.downloader import VideoDownloader
+from src.core.cookie_manager import CookieManager
 from src.utils.logger import LoggerManager
 from src.utils.config import ConfigManager
 
@@ -25,8 +30,14 @@ class BatchDownloadTab(QWidget):
         self.status_bar = status_bar
 
         self.video_info_parser = VideoInfoParser()
+        self.downloader = VideoDownloader()
+        self.cookie_manager = CookieManager()
+
+        self.is_downloading = False
+        self.download_thread = None
 
         self.init_ui()
+        self.set_default_download_dir()
 
     class BatchParseThread(QThread):
         """批量解析线程"""
@@ -80,18 +91,62 @@ class BatchDownloadTab(QWidget):
         table_group = QGroupBox("视频列表")
         table_layout = QVBoxLayout(table_group)
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["序号", "标题", "时长", "视频质量"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["序号", "标题", "时长", "视频质量", "音频质量"])
         self.table.horizontalHeader().setStretchLastSection(True)
         table_layout.addWidget(self.table)
 
         main_layout.addWidget(table_group)
 
-        # 提示信息
+        # 下载选项
+        options_group = QGroupBox("下载选项")
+        options_layout = QVBoxLayout(options_group)
+
+        cookie_layout = QHBoxLayout()
+        self.use_cookie_checkbox = QRadioButton("使用Cookie")
+        cookie_layout.addWidget(self.use_cookie_checkbox)
+        cookie_layout.addStretch()
+        options_layout.addLayout(cookie_layout)
+
+        dir_layout = QHBoxLayout()
+        dir_layout.addWidget(QLabel("下载目录:"))
+        self.dir_input = QLineEdit()
+        self.dir_input.setReadOnly(True)
+        self.dir_input.setPlaceholderText("请选择下载目录")
+        dir_layout.addWidget(self.dir_input)
+        self.browse_button = QPushButton("浏览")
+        self.browse_button.clicked.connect(self.browse_download_dir)
+        dir_layout.addWidget(self.browse_button)
+        options_layout.addLayout(dir_layout)
+
+        main_layout.addWidget(options_group)
+
+        # 进度区域
+        progress_group = QGroupBox("下载进度")
+        progress_layout = QVBoxLayout(progress_group)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        progress_layout.addWidget(self.progress_bar)
         self.status_label = QLabel("准备就绪")
-        main_layout.addWidget(self.status_label)
+        progress_layout.addWidget(self.status_label)
+        main_layout.addWidget(progress_group)
+
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        self.download_button = QPushButton("开始下载")
+        self.download_button.clicked.connect(self.start_download)
+        self.download_button.setEnabled(False)
+        button_layout.addWidget(self.download_button)
+        self.cancel_button = QPushButton("取消")
+        self.cancel_button.clicked.connect(self.cancel_download)
+        self.cancel_button.setEnabled(False)
+        button_layout.addWidget(self.cancel_button)
+        main_layout.addLayout(button_layout)
 
         main_layout.addStretch()
+
+        self.dir_input.textChanged.connect(self.check_download_button)
 
     def update_status(self, message: str):
         self.status_label.setText(message)
@@ -134,13 +189,179 @@ class BatchDownloadTab(QWidget):
             self.video_info_parser.format_duration(basic['duration'])
         ))
 
-        combo = QComboBox()
-        combo.addItem("最高画质 (自动)", "best")
+        video_combo = QComboBox()
+        video_combo.addItem("最高画质 (自动)", "best")
+        audio_combo = QComboBox()
+        audio_combo.addItem("最高音质 (自动)", "best")
         for fmt in formats:
-            if isinstance(fmt, dict) and fmt.get('type') == 'video':
-                combo.addItem(fmt['display'], fmt['format_id'])
-        self.table.setCellWidget(row, 3, combo)
+            if isinstance(fmt, dict):
+                if fmt.get('type') == 'video':
+                    video_combo.addItem(fmt['display'], fmt['format_id'])
+                elif fmt.get('type') == 'audio':
+                    audio_combo.addItem(fmt['display'], fmt['format_id'])
+        self.table.setCellWidget(row, 3, video_combo)
+        self.table.setCellWidget(row, 4, audio_combo)
 
     def on_parse_finished(self):
         self.parse_button.setEnabled(True)
+
+    class BatchDownloadThread(QThread):
+        """批量下载线程"""
+        progress_updated = pyqtSignal(float, str, str, int, int)
+        status_updated = pyqtSignal(str)
+        download_completed = pyqtSignal()
+        download_error = pyqtSignal(str)
+
+        def __init__(self, downloader: VideoDownloader, tasks: list, output_dir: str,
+                     use_cookies: bool = False, cookies_file: str = None,
+                     prefer_mp4: bool = True):
+            super().__init__()
+            self.downloader = downloader
+            self.tasks = tasks
+            self.output_dir = output_dir
+            self.use_cookies = use_cookies
+            self.cookies_file = cookies_file
+            self.prefer_mp4 = prefer_mp4
+            self.is_cancelled = False
+            self.current_index = 0
+            self.total = len(tasks)
+            self._success = True
+            self._error = ""
+
+        def run(self):
+            try:
+                for idx, (url, vfmt, afmt) in enumerate(self.tasks, start=1):
+                    if self.is_cancelled:
+                        break
+                    self.current_index = idx
+                    self.downloader.set_callbacks(
+                        progress_callback=self._progress_callback,
+                        completion_callback=self._completion_callback,
+                        error_callback=self._error_callback
+                    )
+                    fmt = f"{vfmt}+{afmt}" if afmt else vfmt
+                    self.downloader.download_videos(
+                        urls=[url],
+                        output_dir=self.output_dir,
+                        format_id=fmt,
+                        use_cookies=self.use_cookies,
+                        cookies_file=self.cookies_file,
+                        prefer_mp4=self.prefer_mp4
+                    )
+                    if self.downloader.download_thread:
+                        self.downloader.download_thread.join()
+                    if not self._success:
+                        self.download_error.emit(self._error or "下载失败")
+                        return
+                if not self.is_cancelled:
+                    self.download_completed.emit()
+            except Exception as e:
+                self.download_error.emit(str(e))
+
+        def _progress_callback(self, progress: float, speed: str, eta: str,
+                               video_title: str, video_index: int, total_videos: int):
+            self.progress_updated.emit(progress, speed, eta, self.current_index, self.total)
+            status = f"下载中... {self.current_index}/{self.total}"
+            self.status_updated.emit(status)
+
+        def _completion_callback(self, success: bool, result: str):
+            self._success = success
+            if not success:
+                self._error = result
+
+        def _error_callback(self, error_message: str):
+            self._success = False
+            self._error = error_message
+
+        def cancel(self):
+            self.is_cancelled = True
+            self.downloader.cancel_download()
+
+    def check_download_button(self):
+        self.download_button.setEnabled(bool(self.dir_input.text()) and not self.is_downloading)
+
+    def start_download(self):
+        text = self.url_input.toPlainText().strip()
+        urls = [u.strip() for u in text.splitlines() if u.strip()]
+        if not urls:
+            QMessageBox.warning(self, "错误", "请输入至少一个视频链接")
+            return
+
+        output_dir = self.dir_input.text()
+        if not output_dir:
+            QMessageBox.warning(self, "错误", "请选择下载目录")
+            return
+
+        tasks = []
+        for row, url in enumerate(urls):
+            if row >= self.table.rowCount():
+                continue
+            video_combo = self.table.cellWidget(row, 3)
+            audio_combo = self.table.cellWidget(row, 4)
+            vfmt = video_combo.currentData() if isinstance(video_combo, QComboBox) else "best"
+            afmt = audio_combo.currentData() if isinstance(audio_combo, QComboBox) else "best"
+            tasks.append((url, vfmt, afmt))
+
+        self.download_thread = self.BatchDownloadThread(
+            downloader=self.downloader,
+            tasks=tasks,
+            output_dir=output_dir,
+            use_cookies=self.use_cookie_checkbox.isChecked(),
+            cookies_file=self.cookie_manager.get_cookie_file() if self.use_cookie_checkbox.isChecked() else None
+        )
+        self.download_thread.progress_updated.connect(self.update_progress)
+        self.download_thread.status_updated.connect(self.update_status)
+        self.download_thread.download_completed.connect(self.on_download_completed)
+        self.download_thread.download_error.connect(self.on_download_error)
+
+        self.is_downloading = True
+        self.download_button.setEnabled(False)
+        self.cancel_button.setEnabled(True)
+        self.progress_bar.setValue(0)
+        self.status_label.setText("正在准备下载...")
+        self.download_thread.start()
+
+    def update_progress(self, progress: float, speed: str, eta: str, index: int, total: int):
+        self.progress_bar.setValue(int(progress))
+        self.status_label.setText(
+            f"下载中... {index}/{total} {progress:.1f}% - {speed} - 剩余时间: {eta}"
+        )
+
+    def on_download_completed(self):
+        self.is_downloading = False
+        self.download_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+        self.status_label.setText("下载完成")
+
+    def on_download_error(self, error_message: str):
+        self.is_downloading = False
+        self.download_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+        self.status_label.setText("下载失败")
+        QMessageBox.critical(self, "错误", f"下载失败：{error_message}")
+
+    def cancel_download(self):
+        if self.download_thread:
+            self.download_thread.cancel()
+            self.download_thread.wait()
+        self.is_downloading = False
+        self.download_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+        self.status_label.setText("下载已取消")
+
+    def set_default_download_dir(self):
+        last_dir = self.config_manager.get('download_dir')
+        if not last_dir:
+            last_dir = os.path.join(os.path.expanduser('~'), 'Desktop')
+        if not os.path.exists(last_dir):
+            last_dir = os.path.join(os.path.expanduser('~'), 'Desktop')
+        self.dir_input.setText(last_dir)
+        self.config_manager.set('download_dir', last_dir)
+
+    def browse_download_dir(self):
+        current_dir = self.dir_input.text() or os.path.join(os.path.expanduser('~'), 'Desktop')
+        dir_path = QFileDialog.getExistingDirectory(self, "选择下载文件夹", current_dir)
+        if dir_path:
+            self.dir_input.setText(dir_path)
+            self.config_manager.set('download_dir', dir_path)
 
