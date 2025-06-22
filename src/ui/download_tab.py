@@ -297,6 +297,12 @@ class DownloadTab(QWidget):
         self.use_cookie_checkbox = QRadioButton("使用Cookie")
         self.use_cookie_checkbox.setChecked(False)
         cookie_layout.addWidget(self.use_cookie_checkbox)
+
+        # 按钮：获取浏览器 Cookie
+        self.fetch_cookie_button = QPushButton("获取Cookie")
+        self.fetch_cookie_button.clicked.connect(self.fetch_cookies)
+        cookie_layout.addWidget(self.fetch_cookie_button)
+
         cookie_layout.addStretch()
         options_layout.addLayout(cookie_layout)
         
@@ -387,10 +393,10 @@ class DownloadTab(QWidget):
             
             # 创建并启动视频信息获取线程
             self.video_info_thread = VideoInfoThread(
-                self.video_info_parser, 
+                self.video_info_parser,
                 url,
                 use_cookies=self.use_cookie_checkbox.isChecked(),
-                cookies_file=self.cookie_manager.get_cookie_file() if self.use_cookie_checkbox.isChecked() else None
+                cookies_file=self.cookie_tab.get_cookie_file() if self.use_cookie_checkbox.isChecked() else None
             )
             self.video_info_thread.info_retrieved.connect(self.on_video_info_retrieved)
             self.video_info_thread.error_occurred.connect(self.on_video_info_error)
@@ -487,7 +493,7 @@ class DownloadTab(QWidget):
                 video_format_id=video_format_id,
                 audio_format_id=audio_format_id,
                 use_cookies=self.use_cookie_checkbox.isChecked(),
-                cookies_file=self.cookie_manager.get_cookie_file() if self.use_cookie_checkbox.isChecked() else None,
+                cookies_file=self.cookie_tab.get_cookie_file() if self.use_cookie_checkbox.isChecked() else None,
                 prefer_mp4=True  # 默认优先选择MP4格式
             )
             
@@ -583,3 +589,8 @@ class DownloadTab(QWidget):
         if dir_path:
             self.dir_input.setText(dir_path)
             self.config_manager.set('download_dir', dir_path)
+
+    def fetch_cookies(self):
+        """从 Cookie 标签页获取浏览器 Cookie"""
+        if self.cookie_tab:
+            self.cookie_tab.get_youtube_cookies()
