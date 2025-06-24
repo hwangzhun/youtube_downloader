@@ -56,7 +56,7 @@ class AboutDialog(QDialog):
         
         # 获取图标路径
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        icon_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon.ico')
+        icon_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon_horizontal.png')
         
         # 创建布局
         layout = QVBoxLayout(self)
@@ -128,6 +128,17 @@ class AboutDialog(QDialog):
         layout.addLayout(button_layout)
 
 
+class MultiDownloadTab(QWidget):
+    """多视频下载标签页类 (占位)"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        label = QLabel("多视频/播放列表下载功能正在开发中...")
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+        self.setLayout(layout)
+
+
 class MainWindow(QMainWindow):
     """主窗口类"""
     
@@ -158,7 +169,7 @@ class MainWindow(QMainWindow):
         # 获取当前脚本所在目录
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         # icon_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon.ico')
-        icon_vertical_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon_vertical.ico')
+        icon_vertical_path = os.path.join(base_dir, 'resources', 'icons', 'app_icon.ico')
         
         # 设置窗口图标
         if os.path.exists(icon_vertical_path):
@@ -232,10 +243,12 @@ class MainWindow(QMainWindow):
         # 创建下载标签页
         self.cookie_tab = CookieTab(self.status_bar)
         self.download_tab = DownloadTab(self.config_manager, self.status_bar, self.cookie_tab)
+        self.multi_download_tab = MultiDownloadTab()
         self.version_tab = VersionTab(self.status_bar, auto_check=False)
         
         # 添加标签页
-        self.tab_widget.addTab(self.download_tab, "下载")
+        self.tab_widget.addTab(self.download_tab, "单视频下载")
+        self.tab_widget.addTab(self.multi_download_tab, "多视频下载")
         self.tab_widget.addTab(self.cookie_tab, "Cookie")
         self.tab_widget.addTab(self.version_tab, "版本")
         

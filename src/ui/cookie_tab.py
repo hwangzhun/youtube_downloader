@@ -95,10 +95,20 @@ class CookieTab(QWidget):
         self.status_label.setTextFormat(Qt.RichText)  # 启用富文本格式
         status_layout.addWidget(self.status_label)
         
+        # 按钮水平布局
+        status_button_layout = QHBoxLayout()
+
         # 验证按钮
         self.verify_button = QPushButton("验证Cookie")
         self.verify_button.clicked.connect(self.verify_cookies)
-        status_layout.addWidget(self.verify_button)
+        status_button_layout.addWidget(self.verify_button)
+
+        # 清除按钮
+        self.clear_button = QPushButton("清除Cookie")
+        self.clear_button.clicked.connect(self.clear_loaded_cookie)
+        status_button_layout.addWidget(self.clear_button)
+
+        status_layout.addLayout(status_button_layout)
         
         # 添加状态区域到主布局
         main_layout.addWidget(status_group)
@@ -171,6 +181,23 @@ class CookieTab(QWidget):
         # 添加弹性空间
         main_layout.addStretch()
     
+    def clear_loaded_cookie(self):
+        """清除已加载的Cookie信息，但不删除文件。"""
+        # 1. 清空UI组件
+        self.cookie_file_input.clear()
+        self.cookie_content.clear()
+        
+        # 2. 重置状态标签
+        self.status_label.setText("当前状态：未使用")
+        
+        # 3. 更新内部和外部状态
+        self.update_cookie_status(False)
+        self.update_status_message("已清除加载的 Cookie")
+        
+        # 4. 通知用户
+        QMessageBox.information(self, "操作成功", "已清除加载的 Cookie 信息。")
+        self.logger.info("用户清除了已加载的 Cookie 信息。")
+
     def verify_cookies(self):
         """验证Cookie"""
         cookie_file = self.cookie_file_input.text()

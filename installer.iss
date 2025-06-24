@@ -1,5 +1,5 @@
 #define MyAppName "YouTube Downloader"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "Hwangzhun"
 #define MyAppURL "https://github.com/hwangzhun/youtube_downloader"
 #define MyAppExeName "YouTube_Downloader.exe"
@@ -42,17 +42,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "dist\YouTube_Downloader\YouTube_Downloader.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\YouTube_Downloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; 资源文件（不包含二进制文件）
-Source: "resources\icons\*"; DestDir: "{app}\resources\icons"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "src\config\config.json"; DestDir: "{app}"; Flags: ignoreversion
-
 [Dirs]
 ; 设置安装目录的权限
 Name: "{app}"; Permissions: everyone-full
-Name: "{app}\resources"; Permissions: everyone-full
-Name: "{app}\resources\binaries"; Permissions: everyone-full
-Name: "{app}\resources\binaries\yt-dlp"; Permissions: everyone-full
-Name: "{app}\resources\binaries\ffmpeg"; Permissions: everyone-full
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

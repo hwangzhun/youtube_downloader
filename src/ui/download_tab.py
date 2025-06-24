@@ -4,6 +4,7 @@ YouTube Downloader 下载标签页模块
 """
 import os
 import sys
+import re
 import threading
 from typing import Optional, List, Dict, Tuple
 
@@ -11,7 +12,7 @@ from typing import Optional, List, Dict, Tuple
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit,
     QProgressBar, QFileDialog, QRadioButton, QComboBox, QMessageBox, QGroupBox,
-    QSplitter, QFrame, QApplication, QDialog, QStatusBar
+    QSplitter, QFrame, QApplication, QDialog, QStatusBar, QCheckBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
 from PyQt5.QtGui import QIcon, QFont, QPixmap, QCursor
@@ -130,7 +131,8 @@ class DownloadThread(QThread):
                 format_id=f"{self.video_format_id}+{self.audio_format_id}" if self.audio_format_id else self.video_format_id,
                 use_cookies=self.use_cookies,
                 cookies_file=self.cookies_file,
-                prefer_mp4=self.prefer_mp4
+                prefer_mp4=self.prefer_mp4,
+                no_playlist=True  # 明确指定不下载播放列表
             )
             
         except Exception as e:
@@ -221,6 +223,33 @@ class DownloadTab(QWidget):
         # 记录日志
         self.logger.info("下载标签页初始化完成")
     
+    def _validate_url(self, url: str) -> Tuple[bool, str]:
+        """
+        验证URL是否为有效的YouTube视频链接。
+
+        Args:
+            url (str): 要验证的URL。
+
+        Returns:
+            Tuple[bool, str]: 一个元组，第一个元素是布尔值，表示是否有效；第二个是字符串，为错误信息。
+        """
+        # 1. 简单检查是否像一个URL
+        if not re.match(r'https?:\/\/', url):
+            return False, "请输入有效的链接，应以 http:// 或 https:// 开头。"
+
+        # 2. 检查是否是YouTube链接
+        youtube_regex = re.compile(
+            r'^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$')
+        if not youtube_regex.match(url):
+            return False, "请输入有效的YouTube视频链接。"
+
+        # 3. 检查是否包含视频ID (一个基本的检查)
+        # 不再将播放列表视为错误，核心下载器会用 --no-playlist 处理
+        if 'watch?v=' not in url and 'youtu.be/' not in url and '/shorts/' not in url:
+            return False, "链接格式不正确，似乎不是一个有效的YouTube视频链接。"
+
+        return True, ""
+    
     def init_ui(self):
         """初始化 UI"""
         # 创建主布局
@@ -234,9 +263,14 @@ class DownloadTab(QWidget):
         
         # 视频链接输入框
         self.url_input = QTextEdit()
-        self.url_input.setPlaceholderText("在此输入YouTube 视频链接。")
+        self.url_input.setPlaceholderText("在此输入单条 YouTube 视频链接。")
         self.url_input.setMinimumHeight(80)
         input_layout.addWidget(self.url_input)
+        
+        # 添加一个复选框来决定是否使用Cookie
+        self.use_cookie_checkbox = QCheckBox("使用 Cookie (用于会员或年龄限制视频)")
+        self.use_cookie_checkbox.setChecked(False)
+        input_layout.addWidget(self.use_cookie_checkbox)
         
         # 解析按钮
         parse_layout = QHBoxLayout()
@@ -291,14 +325,6 @@ class DownloadTab(QWidget):
         self.audio_quality_combo.setEnabled(False)
         audio_quality_layout.addWidget(self.audio_quality_combo)
         options_layout.addLayout(audio_quality_layout)
-        
-        # Cookie选项
-        cookie_layout = QHBoxLayout()
-        self.use_cookie_checkbox = QRadioButton("使用Cookie")
-        self.use_cookie_checkbox.setChecked(False)
-        cookie_layout.addWidget(self.use_cookie_checkbox)
-        cookie_layout.addStretch()
-        options_layout.addLayout(cookie_layout)
         
         # 下载目录选择
         dir_layout = QHBoxLayout()
@@ -358,6 +384,8 @@ class DownloadTab(QWidget):
         
         # 初始检查下载按钮状态
         self.check_download_button()
+        
+        self.status_bar.showMessage("就绪")
     
     def check_download_button(self):
         """检查下载按钮状态"""
@@ -373,12 +401,86 @@ class DownloadTab(QWidget):
     
     def parse_video_info(self):
         """解析视频信息"""
-        # 获取视频链接
-        url = self.url_input.toPlainText().strip()
-        if not url:
-            QMessageBox.warning(self, "错误", "请输入视频链接")
+        # 获取URL并进行基本清理
+        urls = [line.strip() for line in self.url_input.toPlainText().strip().splitlines() if line.strip()]
+
+        # 检查是否输入了链接
+        if not urls:
+            QMessageBox.warning(self, "警告", "请输入视频链接。")
             return
+
+        # 检查是否输入了多个链接
+        if len(urls) > 1:
+            QMessageBox.warning(self, "警告", "检测到多个链接，此标签页仅支持单条视频下载。\n请一次只输入一个链接。")
+            return
+        
+        url = urls[0]
+        self.current_url = url
+
+        # 验证URL
+        is_valid, error_message = self._validate_url(url)
+        if not is_valid:
+            QMessageBox.warning(self, "链接无效", error_message)
+            return
+
+        # 检查是否为播放列表链接，并让用户选择
+        if 'playlist' in url or '&list=' in url:
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Question)
+            msg_box.setWindowTitle("检测到播放列表链接")
+            msg_box.setText("您输入的链接似乎包含一个播放列表。")
+            msg_box.setInformativeText("请选择如何操作：")
             
+            continue_single_button = msg_box.addButton("仅下载当前视频", QMessageBox.ActionRole)
+            goto_multi_button = msg_box.addButton("跳转到多视频下载", QMessageBox.ActionRole)
+            cancel_button = msg_box.addButton("取消", QMessageBox.RejectRole)
+            
+            msg_box.exec_()
+            
+            clicked_button = msg_box.clickedButton()
+
+            if clicked_button == goto_multi_button:
+                # 切换到多视频下载标签页
+                main_window = self.window()
+                if main_window and hasattr(main_window, 'multi_download_tab'):
+                    main_window.tab_widget.setCurrentWidget(main_window.multi_download_tab)
+                return
+            elif clicked_button == cancel_button:
+                return # 用户选择取消
+
+            # 如果用户选择"仅下载当前视频"或关闭对话框，则继续执行
+
+        # 检查Cookie
+        use_cookies = self.use_cookie_checkbox.isChecked()
+        cookies_file = None
+        if use_cookies:
+            if not self.cookie_tab or not self.cookie_tab.is_cookie_available():
+                msg_box = QMessageBox(self)
+                msg_box.setIcon(QMessageBox.Warning)
+                msg_box.setText("您选择了使用 Cookie，但当前没有可用的 Cookie。")
+                msg_box.setInformativeText("您可以跳转到 Cookie 页面进行设置，或选择不使用 Cookie 继续。")
+                msg_box.setWindowTitle("Cookie 未设置")
+                
+                goto_cookie_button = msg_box.addButton("前往设置", QMessageBox.ActionRole)
+                continue_button = msg_box.addButton("不使用Cookie", QMessageBox.RejectRole)
+                cancel_button = msg_box.addButton("取消", QMessageBox.RejectRole)
+                
+                msg_box.exec_()
+                
+                if msg_box.clickedButton() == goto_cookie_button:
+                    # 切换到Cookie标签页
+                    main_window = self.window()
+                    if main_window and hasattr(main_window, 'tab_widget'):
+                        main_window.tab_widget.setCurrentWidget(self.cookie_tab)
+                    return
+                elif msg_box.clickedButton() == continue_button:
+                    self.use_cookie_checkbox.setChecked(False) # 取消勾选
+                    use_cookies = False
+                else: # cancel_button
+                    return
+            else:
+                cookies_file = self.cookie_tab.get_cookie_file()
+        
         try:
             # 显示加载状态
             self.status_label.setText("正在解析视频信息...")
@@ -389,8 +491,8 @@ class DownloadTab(QWidget):
             self.video_info_thread = VideoInfoThread(
                 self.video_info_parser, 
                 url,
-                use_cookies=self.use_cookie_checkbox.isChecked(),
-                cookies_file=self.cookie_manager.get_cookie_file() if self.use_cookie_checkbox.isChecked() else None
+                use_cookies=use_cookies,
+                cookies_file=cookies_file
             )
             self.video_info_thread.info_retrieved.connect(self.on_video_info_retrieved)
             self.video_info_thread.error_occurred.connect(self.on_video_info_error)
@@ -405,6 +507,20 @@ class DownloadTab(QWidget):
     def on_video_info_retrieved(self, video_info: Dict):
         """视频信息获取成功回调"""
         try:
+            # 检查是否为直播
+            if video_info.get('is_live'):
+                QMessageBox.warning(self, "直播视频", "检测到这是一个正在进行的直播，无法下载。\n请等待直播结束后再尝试。")
+                self.status_label.setText("无法下载直播视频")
+                self.title_label.setText(video_info.get('title', '未知标题') + " (直播中)")
+                self.duration_label.setText("直播")
+                # 禁用下载相关控件
+                self.video_quality_combo.clear()
+                self.video_quality_combo.setEnabled(False)
+                self.audio_quality_combo.clear()
+                self.audio_quality_combo.setEnabled(False)
+                self.download_button.setEnabled(False)
+                return
+
             # 更新视频信息显示
             self.title_label.setText(video_info['title'])
             self.duration_label.setText(self.video_info_parser.format_duration(video_info['duration']))
@@ -471,6 +587,9 @@ class DownloadTab(QWidget):
         video_format_id = self.video_quality_combo.currentData()
         audio_format_id = self.audio_quality_combo.currentData()
         
+        use_cookies = self.use_cookie_checkbox.isChecked()
+        cookies_file = self.cookie_tab.get_cookie_file() if use_cookies and self.cookie_tab.is_cookie_available() else None
+
         try:
             # 更新UI状态
             self.is_downloading = True
@@ -486,8 +605,8 @@ class DownloadTab(QWidget):
                 output_dir=output_dir,
                 video_format_id=video_format_id,
                 audio_format_id=audio_format_id,
-                use_cookies=self.use_cookie_checkbox.isChecked(),
-                cookies_file=self.cookie_manager.get_cookie_file() if self.use_cookie_checkbox.isChecked() else None,
+                use_cookies=use_cookies,
+                cookies_file=cookies_file,
                 prefer_mp4=True  # 默认优先选择MP4格式
             )
             

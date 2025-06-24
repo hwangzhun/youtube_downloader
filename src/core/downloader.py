@@ -211,7 +211,8 @@ class VideoDownloader:
                        format_id: str = 'best', 
                        use_cookies: bool = False, 
                        cookies_file: str = None,
-                       prefer_mp4: bool = True) -> None:
+                       prefer_mp4: bool = True,
+                       no_playlist: bool = False) -> None:
         """
         下載视频
         
@@ -222,6 +223,7 @@ class VideoDownloader:
             use_cookies: 是否使用cookies
             cookies_file: cookies文件路径
             prefer_mp4: 是否優先選擇MP4格式
+            no_playlist: 是否禁止下载播放列表
         """
         if self.is_downloading:
             error_msg = "已有下載任務正在進行"
@@ -244,7 +246,7 @@ class VideoDownloader:
         # 創建下載線程
         self.download_thread = threading.Thread(
             target=self._download_thread,
-            args=(urls, output_dir, format_id, use_cookies, cookies_file, prefer_mp4)
+            args=(urls, output_dir, format_id, use_cookies, cookies_file, prefer_mp4, no_playlist)
         )
         self.download_thread.daemon = True
         self.download_thread.start()
@@ -255,7 +257,8 @@ class VideoDownloader:
                         format_id: str, 
                         use_cookies: bool, 
                         cookies_file: str,
-                        prefer_mp4: bool) -> None:
+                        prefer_mp4: bool,
+                        no_playlist: bool) -> None:
         """
         下載線程
         
@@ -266,6 +269,7 @@ class VideoDownloader:
             use_cookies: 是否使用cookies
             cookies_file: cookies文件路径
             prefer_mp4: 是否優先選擇MP4格式
+            no_playlist: 是否禁止下载播放列表
         """
         success = True
         error_message = ""
@@ -291,6 +295,10 @@ class VideoDownloader:
                     '-o', os.path.join(output_dir, '%(title)s.%(ext)s'),
                     '--newline',
                 ]
+                
+                # 如果是单视频下载，添加 --no-playlist
+                if no_playlist:
+                    cmd.append('--no-playlist')
                 
                 # 添加 ffmpeg 位置
                 cmd.extend(['--ffmpeg-location', self.ffmpeg_path])

@@ -10,6 +10,6 @@ def get_software_version():
             return config['software_version']
     except Exception as e:
         print(f"读取配置文件失败: {str(e)}")
-        return 'unll'
+        return 'null'
     
 # print(get_software_version())
