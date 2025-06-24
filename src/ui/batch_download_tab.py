@@ -6,9 +6,22 @@
 import os
 
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QTextEdit, QPushButton,
-    QMessageBox, QTableWidget, QTableWidgetItem, QComboBox, QLabel, QStatusBar,
-    QLineEdit, QProgressBar, QFileDialog, QRadioButton
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGroupBox,
+    QTextEdit,
+    QPushButton,
+    QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QLabel,
+    QStatusBar,
+    QLineEdit,
+    QProgressBar,
+    QFileDialog,
+    QRadioButton,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 
@@ -35,6 +48,7 @@ class BatchDownloadTab(QWidget):
 
         self.is_downloading = False
         self.download_thread = None
+        self.parsed_urls = []
 
         self.init_ui()
         self.set_default_download_dir()
@@ -91,8 +105,15 @@ class BatchDownloadTab(QWidget):
         table_group = QGroupBox("视频列表")
         table_layout = QVBoxLayout(table_group)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["序号", "标题", "时长", "视频质量", "音频质量"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels([
+            "选择",
+            "序号",
+            "标题",
+            "时长",
+            "视频质量",
+            "音频质量",
+        ])
         self.table.horizontalHeader().setStretchLastSection(True)
         table_layout.addWidget(self.table)
 
@@ -161,6 +182,8 @@ class BatchDownloadTab(QWidget):
             QMessageBox.warning(self, "错误", "请输入至少一个视频链接")
             return
 
+        self.parsed_urls = urls
+
         self.table.setRowCount(0)
         self.parse_button.setEnabled(False)
 
@@ -176,18 +199,29 @@ class BatchDownloadTab(QWidget):
         row = self.table.rowCount()
         self.table.insertRow(row)
 
+        checkbox_item = QTableWidgetItem()
+        checkbox_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+        checkbox_item.setCheckState(Qt.Checked)
+        self.table.setItem(row, 0, checkbox_item)
+
         if 'error' in basic:
-            self.table.setItem(row, 0, QTableWidgetItem(str(index)))
-            self.table.setItem(row, 1, QTableWidgetItem("解析失败"))
-            self.table.setItem(row, 2, QTableWidgetItem("-"))
-            self.table.setItem(row, 3, QTableWidgetItem(basic['error']))
+            self.table.setItem(row, 1, QTableWidgetItem(str(index)))
+            self.table.setItem(row, 2, QTableWidgetItem("解析失败"))
+            self.table.setItem(row, 3, QTableWidgetItem("-"))
+            self.table.setItem(row, 4, QTableWidgetItem(basic['error']))
+            checkbox_item.setCheckState(Qt.Unchecked)
+            checkbox_item.setFlags(Qt.NoItemFlags)
             return
 
-        self.table.setItem(row, 0, QTableWidgetItem(str(index)))
-        self.table.setItem(row, 1, QTableWidgetItem(basic['title']))
-        self.table.setItem(row, 2, QTableWidgetItem(
-            self.video_info_parser.format_duration(basic['duration'])
-        ))
+        self.table.setItem(row, 1, QTableWidgetItem(str(index)))
+        self.table.setItem(row, 2, QTableWidgetItem(basic['title']))
+        self.table.setItem(
+            row,
+            3,
+            QTableWidgetItem(
+                self.video_info_parser.format_duration(basic['duration'])
+            ),
+        )
 
         video_combo = QComboBox()
         video_combo.addItem("最高画质 (自动)", "best")
@@ -199,8 +233,8 @@ class BatchDownloadTab(QWidget):
                     video_combo.addItem(fmt['display'], fmt['format_id'])
                 elif fmt.get('type') == 'audio':
                     audio_combo.addItem(fmt['display'], fmt['format_id'])
-        self.table.setCellWidget(row, 3, video_combo)
-        self.table.setCellWidget(row, 4, audio_combo)
+        self.table.setCellWidget(row, 4, video_combo)
+        self.table.setCellWidget(row, 5, audio_combo)
 
     def on_parse_finished(self):
         self.parse_button.setEnabled(True)
@@ -281,10 +315,8 @@ class BatchDownloadTab(QWidget):
         self.download_button.setEnabled(bool(self.dir_input.text()) and not self.is_downloading)
 
     def start_download(self):
-        text = self.url_input.toPlainText().strip()
-        urls = [u.strip() for u in text.splitlines() if u.strip()]
-        if not urls:
-            QMessageBox.warning(self, "错误", "请输入至少一个视频链接")
+        if not self.parsed_urls:
+            QMessageBox.warning(self, "错误", "请先解析视频链接")
             return
 
         output_dir = self.dir_input.text()
@@ -293,14 +325,21 @@ class BatchDownloadTab(QWidget):
             return
 
         tasks = []
-        for row, url in enumerate(urls):
+        for row, url in enumerate(self.parsed_urls):
             if row >= self.table.rowCount():
                 continue
-            video_combo = self.table.cellWidget(row, 3)
-            audio_combo = self.table.cellWidget(row, 4)
+            item = self.table.item(row, 0)
+            if not item or item.checkState() != Qt.Checked:
+                continue
+            video_combo = self.table.cellWidget(row, 4)
+            audio_combo = self.table.cellWidget(row, 5)
             vfmt = video_combo.currentData() if isinstance(video_combo, QComboBox) else "best"
             afmt = audio_combo.currentData() if isinstance(audio_combo, QComboBox) else "best"
             tasks.append((url, vfmt, afmt))
+
+        if not tasks:
+            QMessageBox.warning(self, "错误", "请勾选至少一个视频")
+            return
 
         self.download_thread = self.BatchDownloadThread(
             downloader=self.downloader,
