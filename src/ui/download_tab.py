@@ -25,31 +25,7 @@ from src.utils.notification import NotificationManager
 from src.utils.config import ConfigManager
 from src.utils.logger import LoggerManager
 from src.core.video_info.video_info_parser import VideoInfoParser
-
-
-class CookieExtractorThread(QThread):
-    """Cookie提取线程类"""
-    
-    # 定义信号
-    extraction_completed = pyqtSignal(bool, str, str)
-    
-    def __init__(self, cookie_manager: CookieManager):
-        """
-        初始化Cookie提取线程
-        
-        Args:
-            cookie_manager: Cookie管理器
-        """
-        super().__init__()
-        self.cookie_manager = cookie_manager
-    
-    def run(self):
-        """执行Cookie提取任务"""
-        try:
-            success, temp_cookie_file, error_message = self.cookie_manager.auto_extract_cookies()
-            self.extraction_completed.emit(success, temp_cookie_file, error_message)
-        except Exception as e:
-            self.extraction_completed.emit(False, "", str(e))
+from src.utils.error_messages import ErrorMessages
 
 
 class VideoInfoThread(QThread):
@@ -60,7 +36,7 @@ class VideoInfoThread(QThread):
     error_occurred = pyqtSignal(str)   # 错误信号
     progress_updated = pyqtSignal(str) # 进度信号
     
-    def __init__(self, video_info_parser: VideoInfoParser, url: str, use_cookies: bool = False, cookies_file: str = None):
+    def __init__(self, video_info_parser: VideoInfoParser, url: str, use_cookies: bool = False, cookies_file: str = None, proxy_url: str = None):
         """
         初始化视频信息获取线程
         
@@ -69,12 +45,14 @@ class VideoInfoThread(QThread):
             url: 视频URL
             use_cookies: 是否使用cookies
             cookies_file: cookies文件路径
+            proxy_url: 代理URL
         """
         super().__init__()
         self.video_info_parser = video_info_parser
         self.url = url
         self.use_cookies = use_cookies
         self.cookies_file = cookies_file
+        self.proxy_url = proxy_url
     
     def run(self):
         """执行视频信息获取任务"""
@@ -82,8 +60,13 @@ class VideoInfoThread(QThread):
             # 发送进度信号
             self.progress_updated.emit("正在获取视频基本信息...")
             
-            # 获取视频信息
-            video_info = self.video_info_parser.parse_video(self.url)
+            # 获取视频信息（传递cookie和代理参数）
+            video_info = self.video_info_parser.parse_video(
+                self.url, 
+                use_cookies=self.use_cookies,
+                cookies_file=self.cookies_file,
+                proxy_url=self.proxy_url
+            )
             
             # 发送信号
             self.info_retrieved.emit(video_info)
@@ -101,7 +84,7 @@ class DownloadThread(QThread):
     
     def __init__(self, downloader: VideoDownloader, url: str, output_dir: str, 
                  video_format_id: str, audio_format_id: str, use_cookies: bool = False, 
-                 cookies_file: str = None, prefer_mp4: bool = True):
+                 cookies_file: str = None, prefer_mp4: bool = True, proxy_url: str = None):
         super().__init__()
         self.downloader = downloader
         self.url = url
@@ -111,6 +94,7 @@ class DownloadThread(QThread):
         self.use_cookies = use_cookies
         self.cookies_file = cookies_file
         self.prefer_mp4 = prefer_mp4
+        self.proxy_url = proxy_url
         self.is_cancelled = False
         self.logger = LoggerManager().get_logger()
     
@@ -124,15 +108,22 @@ class DownloadThread(QThread):
                 error_callback=self._error_callback
             )
             
+            # 构建格式ID：只有当音频格式不是"best"时才组合
+            if self.audio_format_id and self.audio_format_id != "best":
+                format_id = f"{self.video_format_id}+{self.audio_format_id}"
+            else:
+                format_id = self.video_format_id
+            
             # 开始下载
             self.downloader.download_videos(
                 urls=[self.url],  # 将单个URL包装成列表
                 output_dir=self.output_dir,
-                format_id=f"{self.video_format_id}+{self.audio_format_id}" if self.audio_format_id else self.video_format_id,
+                format_id=format_id,
                 use_cookies=self.use_cookies,
                 cookies_file=self.cookies_file,
                 prefer_mp4=self.prefer_mp4,
-                no_playlist=True  # 明确指定不下载播放列表
+                no_playlist=True,  # 明确指定不下载播放列表
+                proxy_url=self.proxy_url
             )
             
         except Exception as e:
@@ -211,7 +202,6 @@ class DownloadTab(QWidget):
         self.is_downloading = False
         self.download_thread = None
         self.video_info_thread = None
-        self.cookie_extractor_thread = None
         self.current_url = ""
         
         # 初始化 UI
@@ -487,12 +477,16 @@ class DownloadTab(QWidget):
             self.parse_button.setEnabled(False)
             QApplication.processEvents()
             
+            # 获取代理设置
+            proxy_url = self._get_proxy_url()
+            
             # 创建并启动视频信息获取线程
             self.video_info_thread = VideoInfoThread(
                 self.video_info_parser, 
                 url,
                 use_cookies=use_cookies,
-                cookies_file=cookies_file
+                cookies_file=cookies_file,
+                proxy_url=proxy_url
             )
             self.video_info_thread.info_retrieved.connect(self.on_video_info_retrieved)
             self.video_info_thread.error_occurred.connect(self.on_video_info_error)
@@ -589,6 +583,9 @@ class DownloadTab(QWidget):
         
         use_cookies = self.use_cookie_checkbox.isChecked()
         cookies_file = self.cookie_tab.get_cookie_file() if use_cookies and self.cookie_tab.is_cookie_available() else None
+        
+        # 获取代理设置
+        proxy_url = self._get_proxy_url()
 
         try:
             # 更新UI状态
@@ -607,7 +604,8 @@ class DownloadTab(QWidget):
                 audio_format_id=audio_format_id,
                 use_cookies=use_cookies,
                 cookies_file=cookies_file,
-                prefer_mp4=True  # 默认优先选择MP4格式
+                prefer_mp4=True,  # 默认优先选择MP4格式
+                proxy_url=proxy_url
             )
             
             # 连接信号
@@ -648,7 +646,38 @@ class DownloadTab(QWidget):
         self.status_label.setText("下载失败")
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("%p%")  # 重置进度条格式
-        QMessageBox.critical(self, "错误", f"下载失败：{error_message}")
+        
+        # 使用 ErrorMessages 格式化错误消息
+        formatted_message = ErrorMessages.get_user_message(error_message, include_suggestion=True)
+        
+        # 检测是否需要 cookies
+        needs_cookie = ErrorMessages.needs_cookie(error_message)
+        use_cookies = self.use_cookie_checkbox.isChecked()
+        has_cookie_available = self.cookie_tab and self.cookie_tab.is_cookie_available()
+        
+        # 如果需要 cookies 且当前未启用，显示特殊对话框
+        if needs_cookie and (not use_cookies or not has_cookie_available):
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("下载失败 - 需要 Cookie")
+            msg_box.setText(formatted_message)
+            msg_box.setInformativeText("此错误通常需要设置 Cookie 才能解决。")
+            
+            # 添加按钮
+            goto_cookie_button = msg_box.addButton("前往设置 Cookie", QMessageBox.ActionRole)
+            cancel_button = msg_box.addButton("取消", QMessageBox.RejectRole)
+            
+            msg_box.exec_()
+            
+            clicked_button = msg_box.clickedButton()
+            if clicked_button == goto_cookie_button:
+                # 切换到 Cookie 标签页
+                main_window = self.window()
+                if main_window and hasattr(main_window, 'tab_widget'):
+                    main_window.tab_widget.setCurrentWidget(self.cookie_tab)
+        else:
+            # 显示标准的错误对话框
+            QMessageBox.critical(self, "下载失败", formatted_message)
     
     def cancel_download(self):
         """取消下载"""
@@ -702,3 +731,28 @@ class DownloadTab(QWidget):
         if dir_path:
             self.dir_input.setText(dir_path)
             self.config_manager.set('download_dir', dir_path)
+    
+    def _get_proxy_url(self) -> Optional[str]:
+        """
+        从配置中获取代理URL
+        
+        Returns:
+            代理URL，如果未启用代理则返回None
+        """
+        if not self.config_manager.get('proxy_enabled', False):
+            return None
+        
+        proxy_type = self.config_manager.get('proxy_type', 'http')
+        proxy_host = self.config_manager.get('proxy_host', '127.0.0.1')
+        proxy_port = self.config_manager.get('proxy_port', 7890)
+        proxy_username = self.config_manager.get('proxy_username', '')
+        proxy_password = self.config_manager.get('proxy_password', '')
+        
+        if not proxy_host:
+            return None
+        
+        # 构建代理URL
+        if proxy_username and proxy_password:
+            return f"{proxy_type}://{proxy_username}:{proxy_password}@{proxy_host}:{proxy_port}"
+        else:
+            return f"{proxy_type}://{proxy_host}:{proxy_port}"

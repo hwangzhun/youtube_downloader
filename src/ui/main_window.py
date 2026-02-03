@@ -15,16 +15,19 @@ from PyQt5.QtWidgets import (
     QMessageBox, QGroupBox, QSplitter, QFrame, QStatusBar,
     QAction, QMenu, QDialog, QSplashScreen, QProgressDialog
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QFont, QPixmap
 
 # 导入自定义模块
 from src.ui.download_tab import DownloadTab
+from src.ui.multi_download_tab import MultiDownloadTab
+from src.ui.channel_download_tab import ChannelDownloadTab
 from src.ui.version_tab import VersionTab
 from src.core.version_manager import VersionManager
 from src.utils.logger import LoggerManager
 from src.utils.config import ConfigManager
 from src.ui.cookie_tab import CookieTab
+from src.ui.proxy_tab import ProxyTab
 from src.config.get_software_version import get_software_version
 
 class VersionCheckThread(QThread):
@@ -128,17 +131,6 @@ class AboutDialog(QDialog):
         layout.addLayout(button_layout)
 
 
-class MultiDownloadTab(QWidget):
-    """多视频下载标签页类 (占位)"""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        label = QLabel("多视频/播放列表下载功能正在开发中...")
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-        self.setLayout(layout)
-
-
 class MainWindow(QMainWindow):
     """主窗口类"""
     
@@ -186,6 +178,9 @@ class MainWindow(QMainWindow):
         if self.splash_screen:
             self.splash_screen.finish(self)
             self.splash_screen = None
+        
+        # 检查 JavaScript 运行时
+        self.check_javascript_runtime()
         
         # 记录日志
         self.logger.info("主窗口初始化完成")
@@ -242,14 +237,18 @@ class MainWindow(QMainWindow):
         
         # 创建下载标签页
         self.cookie_tab = CookieTab(self.status_bar)
+        self.proxy_tab = ProxyTab(self.config_manager, self.status_bar)
         self.download_tab = DownloadTab(self.config_manager, self.status_bar, self.cookie_tab)
-        self.multi_download_tab = MultiDownloadTab()
+        self.multi_download_tab = MultiDownloadTab(self.config_manager, self.status_bar, self.cookie_tab)
+        self.channel_download_tab = ChannelDownloadTab(self.config_manager, self.status_bar, self.cookie_tab)
         self.version_tab = VersionTab(self.status_bar, auto_check=False)
         
         # 添加标签页
         self.tab_widget.addTab(self.download_tab, "单视频下载")
         self.tab_widget.addTab(self.multi_download_tab, "多视频下载")
+        self.tab_widget.addTab(self.channel_download_tab, "频道下载")
         self.tab_widget.addTab(self.cookie_tab, "Cookie")
+        self.tab_widget.addTab(self.proxy_tab, "代理")
         self.tab_widget.addTab(self.version_tab, "版本")
         
         # 添加标签页到主布局
@@ -258,11 +257,12 @@ class MainWindow(QMainWindow):
         # 创建菜单栏
         self.create_menu_bar()
         
-        # 设置状态栏
+        # 设置状态栏初始状态
         self.status_bar.showMessage("就绪")
         
         # 添加作者信息到状态栏
         self.author_label = QLabel("By Hwangzhun | MIT 许可")
+        self.author_label.setStyleSheet("color: #666666; padding: 0 8px;")
         self.status_bar.addPermanentWidget(self.author_label)
         
         # 应用 Metro 风格
@@ -430,6 +430,145 @@ class MainWindow(QMainWindow):
             self.logger.error(f"检查二进制文件时发生错误: {str(e)}", exc_info=True)
             QMessageBox.critical(self, "错误", f"检查必要的组件时发生错误：\n{str(e)}")
             sys.exit(1)
+    
+    def check_javascript_runtime(self):
+        """检查 JavaScript 运行时，如果没有则提示用户"""
+        from src.utils.platform import find_javascript_runtime
+        import webbrowser
+        
+        runtime = find_javascript_runtime()
+        if not runtime:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("缺少 JavaScript 运行时")
+            msg.setText("检测到您的系统未安装 JavaScript 运行时")
+            msg.setInformativeText(
+                "YouTube 现在需要 JavaScript 运行时来提取视频信息。\n\n"
+                "推荐安装 Node.js：https://nodejs.org/\n\n"
+                "您可以选择自动安装（需要 Windows 10 1709+ 或 Windows 11）\n"
+                "或手动下载安装。安装完成后请重启应用程序。"
+            )
+            
+            # 添加按钮
+            auto_install = QPushButton("自动安装 Node.js")
+            open_nodejs = QPushButton("打开 Node.js 官网")
+            ignore = QPushButton("稍后提醒")
+            
+            msg.addButton(auto_install, QMessageBox.ActionRole)
+            msg.addButton(open_nodejs, QMessageBox.ActionRole)
+            msg.addButton(ignore, QMessageBox.RejectRole)
+            
+            result = msg.exec_()
+            
+            if result == 0:  # 自动安装 Node.js
+                self.logger.info("用户选择自动安装 Node.js")
+                self._install_nodejs_via_winget()
+            elif result == 1:  # 打开 Node.js 官网
+                webbrowser.open('https://nodejs.org/')
+                self.logger.info("用户点击打开 Node.js 官网")
+            else:
+                self.logger.info("用户选择稍后提醒")
+        else:
+            self.logger.info(f"检测到 JavaScript 运行时: {runtime}")
+    
+    def _install_nodejs_via_winget(self):
+        """使用 winget 安装 Node.js"""
+        import subprocess
+        import webbrowser
+        
+        # 显示安装进度对话框
+        progress = QProgressDialog("正在安装 Node.js，请稍候...", "取消", 0, 0, self)
+        progress.setWindowTitle("安装 Node.js")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
+        
+        try:
+            # 检查 winget 是否可用
+            check_winget = subprocess.run(
+                ['winget', '--version'],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+            )
+            
+            if check_winget.returncode != 0:
+                progress.close()
+                QMessageBox.warning(
+                    self, 
+                    "winget 不可用",
+                    "您的系统未安装 winget（Windows 包管理器）。\n\n"
+                    "请手动下载安装 Node.js，或升级到 Windows 10 1709+ / Windows 11。"
+                )
+                webbrowser.open('https://nodejs.org/')
+                return
+            
+            # 使用 winget 安装 Node.js LTS
+            self.logger.info("开始使用 winget 安装 Node.js LTS")
+            install_process = subprocess.run(
+                [
+                    'winget', 'install', 'OpenJS.NodeJS.LTS',
+                    '--accept-source-agreements',
+                    '--accept-package-agreements',
+                    '--silent'
+                ],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+            )
+            
+            progress.close()
+            
+            if install_process.returncode == 0:
+                self.logger.info("Node.js 安装成功")
+                QMessageBox.information(
+                    self,
+                    "安装成功",
+                    "Node.js 已成功安装！\n\n"
+                    "请重启应用程序以使更改生效。"
+                )
+            else:
+                # 检查是否已安装
+                if "已安装" in install_process.stdout or "already installed" in install_process.stdout.lower():
+                    self.logger.info("Node.js 已经安装")
+                    QMessageBox.information(
+                        self,
+                        "已安装",
+                        "Node.js 已经安装在您的系统中。\n\n"
+                        "请重启应用程序以使更改生效。"
+                    )
+                else:
+                    self.logger.error(f"Node.js 安装失败: {install_process.stderr}")
+                    QMessageBox.warning(
+                        self,
+                        "安装失败",
+                        f"自动安装失败，请手动下载安装 Node.js。\n\n"
+                        f"错误信息：{install_process.stderr[:200] if install_process.stderr else '未知错误'}"
+                    )
+                    webbrowser.open('https://nodejs.org/')
+                    
+        except FileNotFoundError:
+            progress.close()
+            self.logger.error("winget 命令未找到")
+            QMessageBox.warning(
+                self,
+                "winget 不可用",
+                "您的系统未安装 winget（Windows 包管理器）。\n\n"
+                "请手动下载安装 Node.js。"
+            )
+            webbrowser.open('https://nodejs.org/')
+        except Exception as e:
+            progress.close()
+            self.logger.error(f"安装 Node.js 时发生错误: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "安装错误",
+                f"安装过程中发生错误：{str(e)}\n\n"
+                "请手动下载安装 Node.js。"
+            )
+            webbrowser.open('https://nodejs.org/')
     
     def closeEvent(self, event):
         """关闭窗口事件处理"""

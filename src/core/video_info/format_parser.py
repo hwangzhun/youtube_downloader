@@ -2,15 +2,16 @@ import json
 import os
 from typing import Dict, List, Optional
 from datetime import datetime
+from pathlib import Path
+
+from src.utils.platform import get_yt_dlp_path
 
 class FormatParser:
     """格式解析器类"""
     
     def __init__(self):
-        # 获取基础目录
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # src/core/video_info
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))  # 项目根目录
-        self.yt_dlp_path = os.path.join(base_dir, 'resources', 'binaries', 'yt-dlp', 'yt-dlp.exe')
+        # 获取 yt-dlp 路径
+        self.yt_dlp_path = str(get_yt_dlp_path())
         
         # 加载编码映射表
         self.codec_mappings = self._load_codec_mappings()

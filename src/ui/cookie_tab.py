@@ -11,40 +11,13 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QMessageBox, QGroupBox, QStatusBar,
     QFileDialog
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 
 # 使用绝对导入
 from src.core.cookie_manager import CookieManager
 from src.utils.logger import LoggerManager
-
-
-# 添加一个工作线程类
-class ChromeCookieWorker(QThread):
-    """Chrome Cookie获取工作线程"""
-    finished = pyqtSignal(bool, str)  # 完成信号，参数：是否成功，消息
-    
-    def __init__(self):
-        super().__init__()
-        self.logger = LoggerManager().get_logger()
-    
-    def run(self):
-        try:
-            from src.core.cookie.get_chrome_cookie import get_youtube_cookies
-            success = get_youtube_cookies()
-            
-            if success:
-                cookie_file = 'youtube_cookies.txt'
-                if os.path.exists(cookie_file):
-                    self.finished.emit(True, "Chrome Cookie获取成功")
-                else:
-                    self.finished.emit(False, "Chrome Cookie获取失败：文件未生成")
-            else:
-                self.finished.emit(False, "Chrome Cookie获取失败")
-                
-        except Exception as e:
-            self.logger.error(f"获取Chrome Cookie失败: {str(e)}")
-            self.finished.emit(False, f"获取Chrome Cookie失败: {str(e)}")
+from src.ui.components.cookie_login_dialog import CookieLoginDialog, is_webengine_available
 
 class CookieTab(QWidget):
     """Cookie标签页类"""
@@ -68,8 +41,8 @@ class CookieTab(QWidget):
         # 添加Cookie状态显示
         self.cookie_status = "未使用"  # 添加状态属性
         
-        # 添加工作线程属性
-        self.cookie_worker = None
+        # 登录对话框引用
+        self.login_dialog: Optional[CookieLoginDialog] = None
         
         # 初始化UI
         self.init_ui()
@@ -133,22 +106,44 @@ class CookieTab(QWidget):
         # 创建按钮布局
         button_layout = QHBoxLayout()
         
-        # Chromium浏览器获取按钮
-        self.chrome_button = QPushButton("获取浏览器的 Cookie")
-        self.chrome_button.clicked.connect(self.get_youtube_cookies)
-        button_layout.addWidget(self.chrome_button)
+        # 登录获取按钮
+        self.login_button = QPushButton("登录获取 Cookie")
+        self.login_button.setStyleSheet("""
+            QPushButton {
+                padding: 8px 20px;
+                font-size: 13px;
+                font-weight: bold;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #0069d9;
+            }
+            QPushButton:pressed {
+                background-color: #0062cc;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+            }
+        """)
+        self.login_button.clicked.connect(self.open_login_dialog)
+        button_layout.addWidget(self.login_button)
         
         # 添加说明文字
-        note_label = QLabel("此功能仅支持 Chrome、Firefox、Edge浏览器，其他浏览器的请自行获取cookie")
+        note_label = QLabel("点击按钮将打开内置浏览器，请登录您的 Google 账户")
         note_label.setStyleSheet("color: #666; font-size: 10px;")
         note_label.setWordWrap(True)
         cookie_file_layout.addWidget(note_label)
         
-        # 自动提取按钮
-        self.auto_extract_button = QPushButton("自动提取Cookie")
-        self.auto_extract_button.setEnabled(False)
-        self.auto_extract_button.clicked.connect(self.auto_extract_cookies)
-        button_layout.addWidget(self.auto_extract_button)
+        # 检查 WebEngine 是否可用
+        if not is_webengine_available():
+            self.login_button.setEnabled(False)
+            self.login_button.setToolTip("需要安装 PyQtWebEngine")
+            note_label.setText("⚠️ 请先安装 PyQtWebEngine: pip install PyQtWebEngine")
+            note_label.setStyleSheet("color: #e74c3c; font-size: 10px;")
+        
         
         cookie_file_layout.addLayout(button_layout)
         
@@ -237,51 +232,62 @@ class CookieTab(QWidget):
             QMessageBox.critical(self, "错误", f"验证Cookie失败:\n{str(e)}")
             self.update_status_message("Cookie验证失败")
     
-    def get_youtube_cookies(self):
-        """获取Chrome浏览器的Cookie"""
+    def open_login_dialog(self):
+        """打开内置浏览器登录对话框"""
         try:
-            self.logger.info("开始获取Chrome Cookie...")
-            # 禁用按钮，防止重复点击
-            self.chrome_button.setEnabled(False)
-            self.update_status_message("正在获取Chrome Cookie...")
+            if not is_webengine_available():
+                QMessageBox.critical(
+                    self, 
+                    "错误", 
+                    "PyQtWebEngine 未安装。\n\n请运行以下命令安装：\npip install PyQtWebEngine"
+                )
+                return
             
-            # 创建并启动工作线程
-            self.logger.debug("创建ChromeCookieWorker线程")
-            self.cookie_worker = ChromeCookieWorker()
-            self.cookie_worker.finished.connect(self.handle_cookie_result)
-            self.logger.debug("启动ChromeCookieWorker线程")
-            self.cookie_worker.start()
+            self.logger.info("打开登录对话框...")
+            self.update_status_message("正在打开登录窗口...")
+            
+            # 创建登录对话框
+            self.login_dialog = CookieLoginDialog(self)
+            self.login_dialog.login_finished.connect(self.handle_login_result)
+            
+            # 开始登录流程
+            self.login_dialog.start_login()
+            
+            # 显示对话框（模态）
+            self.login_dialog.exec_()
             
         except Exception as e:
-            self.logger.error(f"启动Chrome Cookie获取失败: {str(e)}", exc_info=True)
-            QMessageBox.critical(self, "错误", f"启动Chrome Cookie获取失败:\n{str(e)}")
-            self.update_status_message("Chrome Cookie获取失败")
-            self.chrome_button.setEnabled(True)
+            self.logger.error(f"打开登录对话框失败: {str(e)}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"打开登录对话框失败:\n{str(e)}")
+            self.update_status_message("打开登录对话框失败")
     
-    def handle_cookie_result(self, success: bool, message: str):
-        """处理Cookie获取结果"""
+    def handle_login_result(self, success: bool, cookie_file: str, message: str):
+        """处理登录结果"""
         try:
-            self.logger.info(f"收到Cookie获取结果: success={success}, message={message}")
-            if success:
-                # 加载生成的cookie文件
-                cookie_file = 'youtube_cookies.txt'
+            self.logger.info(f"收到登录结果: success={success}, message={message}")
+            
+            if success and cookie_file and os.path.exists(cookie_file):
+                # 加载生成的 cookie 文件
                 self.logger.debug(f"设置Cookie文件路径: {cookie_file}")
                 self.cookie_file_input.setText(cookie_file)
                 self.load_cookie_content(cookie_file)
-                self.update_status_message(message)
-                self.logger.info("Cookie获取成功并已加载")
+                self.update_status_message("Cookie 获取成功")
+                self.logger.info("Cookie 获取成功并已加载")
+                
+                # 显示成功消息
+                QMessageBox.information(
+                    self, 
+                    "成功", 
+                    f"Cookie 获取成功！\n\n文件已保存至：{cookie_file}\n\n建议点击「验证Cookie」按钮验证是否有效。"
+                )
             else:
-                self.logger.warning(f"Cookie获取失败: {message}")
-                QMessageBox.warning(self, "警告", message)
-                self.update_status_message(message)
+                self.logger.warning(f"Cookie 获取失败: {message}")
+                self.update_status_message(f"Cookie 获取失败: {message}")
+                
         except Exception as e:
-            self.logger.error(f"处理Cookie结果失败: {str(e)}", exc_info=True)
-            QMessageBox.critical(self, "错误", f"处理Cookie结果失败:\n{str(e)}")
-            self.update_status_message("处理Cookie结果失败")
-        finally:
-            # 重新启用按钮
-            self.logger.debug("重新启用Chrome Cookie获取按钮")
-            self.chrome_button.setEnabled(True)
+            self.logger.error(f"处理登录结果失败: {str(e)}", exc_info=True)
+            QMessageBox.critical(self, "错误", f"处理登录结果失败:\n{str(e)}")
+            self.update_status_message("处理登录结果失败")
     
     def browse_cookie_file(self):
         """浏览Cookie文件"""
@@ -307,23 +313,6 @@ class CookieTab(QWidget):
             self.logger.error(f"加载Cookie文件失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"加载Cookie文件失败:\n{str(e)}")
             self.update_status_message("Cookie文件加载失败")
-    
-    def auto_extract_cookies(self):
-        """自动提取Cookie"""
-        try:
-            success, temp_cookie_file, error_message = self.cookie_manager.auto_extract_cookies()
-            
-            if success:
-                self.cookie_file_input.setText(temp_cookie_file)
-                self.load_cookie_content(temp_cookie_file)
-                self.update_status_message("Cookie自动提取成功")
-            else:
-                QMessageBox.warning(self, "警告", f"Cookie自动提取失败:\n{error_message}")
-                self.update_status_message("Cookie自动提取失败")
-        except Exception as e:
-            self.logger.error(f"自动提取Cookie失败: {str(e)}")
-            QMessageBox.critical(self, "错误", f"自动提取Cookie失败:\n{str(e)}")
-            self.update_status_message("Cookie自动提取失败")
     
     def update_status_message(self, message: str):
         """更新状态栏消息"""

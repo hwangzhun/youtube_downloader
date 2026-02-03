@@ -33,14 +33,9 @@ class LoggerManager:
         if hasattr(self, 'logger'):
             return
             
-        # 获取应用程序数据目录
-        if sys.platform.startswith('win'):
-            app_data_dir = os.path.join(os.environ.get('APPDATA', ''), 'YouTubeDownloader', 'logs')
-        else:
-            app_data_dir = os.path.join(os.path.expanduser('~'), '.youtube_downloader', 'logs')
-        
-        # 确保目录存在
-        os.makedirs(app_data_dir, exist_ok=True)
+        # 获取应用程序日志目录
+        from src.utils.platform import get_logs_dir
+        app_data_dir = str(get_logs_dir())
         
         # 设置日志文件路径
         self.log_file = log_file or os.path.join(

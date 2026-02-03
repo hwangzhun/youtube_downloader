@@ -1,5 +1,5 @@
 #define MyAppName "YouTube Downloader"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Hwangzhun"
 #define MyAppURL "https://github.com/hwangzhun/youtube_downloader"
 #define MyAppExeName "YouTube_Downloader.exe"
@@ -8,17 +8,17 @@
 ; 注意: AppId的值为单独标识该应用程序。
 ; 不要为其他安装程序使用相同的AppId值。
 AppId={{A1B2C3D4-E5F6-4A5B-8C7D-9E0F1A2B3C4D}
-AppName={#MyAppName}
+AppName={#MyAppName} - {#MyAppVersion}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={autopf}\{#MyAppName} - {#MyAppVersion}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=installer
-OutputBaseFilename=YouTube_Downloader_Setup
+OutputBaseFilename=YouTube_Downloader_Setup-{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

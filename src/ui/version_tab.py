@@ -5,19 +5,23 @@ YouTube Downloader 版本标签页模块
 import os
 import sys
 import threading
+import time
+from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 
 # 导入 PyQt5 模块
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
-    QGroupBox, QMessageBox, QApplication, QStatusBar
+    QGroupBox, QMessageBox, QApplication, QStatusBar, QFrame, QTextEdit,
+    QGridLayout, QScrollArea, QSplitter
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer
-from PyQt5.QtGui import QIcon, QFont
+from PyQt5.QtGui import QIcon, QFont, QColor, QPalette
 
 # 导入自定义模块
 from src.core.version_manager import VersionManager
 from src.utils.logger import LoggerManager
+from src.utils.config import ConfigManager
 
 
 class UpdateWorker(QThread):
@@ -72,8 +76,8 @@ class UpdateWorker(QThread):
 class VersionCheckThread(QThread):
     """版本检查线程类"""
     
-    # 定义信号
-    check_completed = pyqtSignal(bool, str, bool, str, str, bool, str, bool, str, str)
+    # 定义信号 - 增加 release notes 和文件大小信息
+    check_completed = pyqtSignal(dict)  # 使用字典传递所有信息
     check_error = pyqtSignal(str)
     progress_updated = pyqtSignal(str)
     
@@ -90,12 +94,29 @@ class VersionCheckThread(QThread):
     def run(self):
         """执行版本检查任务"""
         try:
+            result = {}
+            
             # 发送进度信号
             self.progress_updated.emit("正在检查 yt-dlp 版本...")
             
             # 检查 yt-dlp 版本
             yt_dlp_success, yt_dlp_current_version = self.version_manager.get_yt_dlp_version()
             yt_dlp_has_update, yt_dlp_latest_version, yt_dlp_download_url = self.version_manager.check_yt_dlp_update()
+            
+            # 获取 yt-dlp 的 release notes 和文件大小
+            yt_dlp_release_notes = self.version_manager.get_yt_dlp_release_notes()
+            yt_dlp_file_size = self.version_manager.get_yt_dlp_file_size()
+            
+            result['yt_dlp'] = {
+                'success': yt_dlp_success,
+                'current_version': yt_dlp_current_version,
+                'has_update': yt_dlp_has_update,
+                'latest_version': yt_dlp_latest_version,
+                'download_url': yt_dlp_download_url,
+                'release_notes': yt_dlp_release_notes,
+                'file_size': yt_dlp_file_size,
+                'install_path': self.version_manager.yt_dlp_path
+            }
             
             # 发送进度信号
             self.progress_updated.emit("正在检查 ffmpeg 版本...")
@@ -104,21 +125,42 @@ class VersionCheckThread(QThread):
             ffmpeg_success, ffmpeg_current_version = self.version_manager.get_ffmpeg_version()
             ffmpeg_has_update, ffmpeg_latest_version, ffmpeg_download_url = self.version_manager.check_ffmpeg_update()
             
+            # 获取 ffmpeg 的 release notes 和文件大小
+            ffmpeg_release_notes = self.version_manager.get_ffmpeg_release_notes()
+            ffmpeg_file_size = self.version_manager.get_ffmpeg_total_size()
+            
             # 修正 ffmpeg 最新版本显示问题
             if ffmpeg_latest_version == "last":
                 ffmpeg_latest_version = "最新版本"
             
+            result['ffmpeg'] = {
+                'success': ffmpeg_success,
+                'current_version': ffmpeg_current_version,
+                'has_update': ffmpeg_has_update,
+                'latest_version': ffmpeg_latest_version,
+                'download_url': ffmpeg_download_url,
+                'release_notes': ffmpeg_release_notes,
+                'file_size': ffmpeg_file_size,
+                'install_path': self.version_manager.ffmpeg_dir
+            }
+            
             # 发送信号
-            self.check_completed.emit(
-                yt_dlp_success, yt_dlp_current_version, yt_dlp_has_update, yt_dlp_latest_version, yt_dlp_download_url,
-                ffmpeg_success, ffmpeg_current_version, ffmpeg_has_update, ffmpeg_latest_version, ffmpeg_download_url
-            )
+            self.check_completed.emit(result)
         except Exception as e:
             self.check_error.emit(str(e))
 
 
 class VersionTab(QWidget):
     """版本标签页类"""
+    
+    # 状态图标和颜色定义
+    STATUS_ICONS = {
+        'latest': ('✓', '#28a745'),      # 绿色 - 已是最新
+        'update': ('⬆', '#ffc107'),      # 黄色 - 有更新
+        'not_installed': ('✗', '#dc3545'), # 红色 - 未安装
+        'checking': ('⟳', '#6c757d'),    # 灰色 - 检查中
+        'error': ('⚠', '#dc3545')        # 红色 - 错误
+    }
     
     def __init__(self, status_bar: QStatusBar = None, auto_check: bool = True):
         """
@@ -133,6 +175,9 @@ class VersionTab(QWidget):
         # 初始化日志
         self.logger = LoggerManager().get_logger()
         self.status_bar = status_bar
+        
+        # 初始化配置管理器
+        self.config_manager = ConfigManager()
         
         # 初始化版本管理器
         self.version_manager = VersionManager()
@@ -151,6 +196,10 @@ class VersionTab(QWidget):
         self.ffmpeg_current_version = ""
         self.ffmpeg_latest_version = ""
         self.ffmpeg_download_url = ""
+        
+        # Release Notes
+        self.yt_dlp_release_notes = ""
+        self.ffmpeg_release_notes = ""
         
         # 初始化 UI
         self.init_ui()
@@ -177,100 +226,53 @@ class VersionTab(QWidget):
         """初始化 UI"""
         # 创建主布局
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)  # 增加边距
-        main_layout.setSpacing(15)  # 增加组件间距
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(12)
+        
+        # 创建上次检查时间标签
+        self.last_check_label = QLabel()
+        self.last_check_label.setStyleSheet("color: #6c757d; font-size: 11px;")
+        self._update_last_check_label()
+        main_layout.addWidget(self.last_check_label)
         
         # 创建 yt-dlp 版本信息区域
-        yt_dlp_group = QGroupBox("yt-dlp 版本信息")
-        yt_dlp_layout = QVBoxLayout(yt_dlp_group)
-        yt_dlp_layout.setContentsMargins(15, 15, 15, 15)  # 增加组内边距
-        yt_dlp_layout.setSpacing(10)  # 增加组内间距
-        
-        # 当前版本
-        current_version_layout = QHBoxLayout()
-        current_version_layout.addWidget(QLabel("当前版本:"))
-        self.yt_dlp_current_version_label = QLabel("未检查")
-        current_version_layout.addWidget(self.yt_dlp_current_version_label)
-        current_version_layout.addStretch()
-        yt_dlp_layout.addLayout(current_version_layout)
-        
-        # 最新版本
-        latest_version_layout = QHBoxLayout()
-        latest_version_layout.addWidget(QLabel("最新版本:"))
-        self.yt_dlp_latest_version_label = QLabel("未检查")
-        latest_version_layout.addWidget(self.yt_dlp_latest_version_label)
-        latest_version_layout.addStretch()
-        yt_dlp_layout.addLayout(latest_version_layout)
-        
-        # 更新按钮和进度条
-        update_layout = QHBoxLayout()
-        self.yt_dlp_update_button = QPushButton("更新")
-        self.yt_dlp_update_button.clicked.connect(self.update_yt_dlp)
-        self.yt_dlp_update_button.setEnabled(False)
-        update_layout.addWidget(self.yt_dlp_update_button)
-        
-        self.yt_dlp_progress_bar = QProgressBar()
-        self.yt_dlp_progress_bar.setRange(0, 100)
-        self.yt_dlp_progress_bar.setValue(0)
-        update_layout.addWidget(self.yt_dlp_progress_bar)
-        
-        yt_dlp_layout.addLayout(update_layout)
-        
-        # 状态标签
-        self.yt_dlp_status_label = QLabel("")
-        yt_dlp_layout.addWidget(self.yt_dlp_status_label)
-        
-        # 添加 yt-dlp 版本信息区域到主布局
+        yt_dlp_group = self._create_component_group(
+            "yt-dlp",
+            "YouTube 视频下载核心组件"
+        )
         main_layout.addWidget(yt_dlp_group)
         
         # 创建 ffmpeg 版本信息区域
-        ffmpeg_group = QGroupBox("ffmpeg 版本信息")
-        ffmpeg_layout = QVBoxLayout(ffmpeg_group)
-        ffmpeg_layout.setContentsMargins(15, 15, 15, 15)  # 增加组内边距
-        ffmpeg_layout.setSpacing(10)  # 增加组内间距
-        
-        # 当前版本
-        current_version_layout = QHBoxLayout()
-        current_version_layout.addWidget(QLabel("当前版本:"))
-        self.ffmpeg_current_version_label = QLabel("未检查")
-        current_version_layout.addWidget(self.ffmpeg_current_version_label)
-        current_version_layout.addStretch()
-        ffmpeg_layout.addLayout(current_version_layout)
-        
-        # 最新版本
-        latest_version_layout = QHBoxLayout()
-        latest_version_layout.addWidget(QLabel("最新版本:"))
-        self.ffmpeg_latest_version_label = QLabel("未检查")
-        latest_version_layout.addWidget(self.ffmpeg_latest_version_label)
-        latest_version_layout.addStretch()
-        ffmpeg_layout.addLayout(latest_version_layout)
-        
-        # 更新按钮和进度条
-        update_layout = QHBoxLayout()
-        self.ffmpeg_update_button = QPushButton("更新")
-        self.ffmpeg_update_button.clicked.connect(self.update_ffmpeg)
-        self.ffmpeg_update_button.setEnabled(False)
-        update_layout.addWidget(self.ffmpeg_update_button)
-        
-        self.ffmpeg_progress_bar = QProgressBar()
-        self.ffmpeg_progress_bar.setRange(0, 100)
-        self.ffmpeg_progress_bar.setValue(0)
-        update_layout.addWidget(self.ffmpeg_progress_bar)
-        
-        ffmpeg_layout.addLayout(update_layout)
-        
-        # 状态标签
-        self.ffmpeg_status_label = QLabel("")
-        ffmpeg_layout.addWidget(self.ffmpeg_status_label)
-        
-        # 添加 ffmpeg 版本信息区域到主布局
+        ffmpeg_group = self._create_ffmpeg_group()
         main_layout.addWidget(ffmpeg_group)
+        
+        # 创建 Release Notes 区域
+        notes_group = self._create_release_notes_group()
+        main_layout.addWidget(notes_group)
         
         # 添加检查更新按钮
         check_layout = QHBoxLayout()
         check_layout.addStretch()
         
-        self.check_updates_button = QPushButton("检查更新")
+        self.check_updates_button = QPushButton("🔄 检查更新")
+        self.check_updates_button.setMinimumWidth(120)
+        self.check_updates_button.setStyleSheet("""
+            QPushButton {
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: bold;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+            }
+        """)
         self.check_updates_button.clicked.connect(self.check_versions)
         check_layout.addWidget(self.check_updates_button)
         
@@ -278,6 +280,405 @@ class VersionTab(QWidget):
         
         # 添加弹性空间
         main_layout.addStretch()
+    
+    def _create_component_group(self, name: str, description: str) -> QGroupBox:
+        """创建组件版本信息组"""
+        group = QGroupBox(f"{name} 版本信息")
+        group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        """)
+        
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 15, 12, 12)
+        layout.setSpacing(8)
+        
+        # 描述标签
+        desc_label = QLabel(description)
+        desc_label.setStyleSheet("color: #6c757d; font-size: 11px; font-weight: normal;")
+        layout.addWidget(desc_label)
+        
+        # 版本信息网格
+        info_grid = QGridLayout()
+        info_grid.setSpacing(8)
+        
+        # 状态图标
+        status_icon_label = QLabel("⟳")
+        status_icon_label.setStyleSheet("font-size: 24px; color: #6c757d;")
+        status_icon_label.setFixedWidth(40)
+        status_icon_label.setAlignment(Qt.AlignCenter)
+        info_grid.addWidget(status_icon_label, 0, 0, 3, 1)
+        
+        # 当前版本
+        info_grid.addWidget(QLabel("当前版本:"), 0, 1)
+        current_version_label = QLabel("检查中...")
+        current_version_label.setStyleSheet("font-weight: bold;")
+        info_grid.addWidget(current_version_label, 0, 2)
+        
+        # 最新版本
+        info_grid.addWidget(QLabel("最新版本:"), 1, 1)
+        latest_version_label = QLabel("检查中...")
+        info_grid.addWidget(latest_version_label, 1, 2)
+        
+        # 文件大小
+        info_grid.addWidget(QLabel("文件大小:"), 2, 1)
+        file_size_label = QLabel("--")
+        file_size_label.setStyleSheet("color: #6c757d;")
+        info_grid.addWidget(file_size_label, 2, 2)
+        
+        # 安装路径
+        info_grid.addWidget(QLabel("安装路径:"), 3, 1)
+        install_path_label = QLabel("--")
+        install_path_label.setStyleSheet("color: #6c757d; font-size: 10px;")
+        install_path_label.setWordWrap(True)
+        info_grid.addWidget(install_path_label, 3, 2)
+        
+        info_grid.setColumnStretch(2, 1)
+        layout.addLayout(info_grid)
+        
+        # 进度条和按钮
+        progress_layout = QHBoxLayout()
+        
+        update_button = QPushButton("更新")
+        update_button.setMinimumWidth(80)
+        update_button.setEnabled(False)
+        update_button.setStyleSheet("""
+            QPushButton {
+                padding: 6px 12px;
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+            }
+        """)
+        progress_layout.addWidget(update_button)
+        
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 100)
+        progress_bar.setValue(0)
+        progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                text-align: center;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #28a745;
+                border-radius: 3px;
+            }
+        """)
+        progress_layout.addWidget(progress_bar)
+        
+        layout.addLayout(progress_layout)
+        
+        # 状态标签
+        status_label = QLabel("")
+        status_label.setStyleSheet("color: #6c757d; font-size: 11px;")
+        layout.addWidget(status_label)
+        
+        # 保存 yt-dlp 的控件引用
+        self.yt_dlp_status_icon = status_icon_label
+        self.yt_dlp_current_version_label = current_version_label
+        self.yt_dlp_latest_version_label = latest_version_label
+        self.yt_dlp_file_size_label = file_size_label
+        self.yt_dlp_install_path_label = install_path_label
+        self.yt_dlp_update_button = update_button
+        self.yt_dlp_progress_bar = progress_bar
+        self.yt_dlp_status_label = status_label
+        
+        # 连接按钮事件
+        update_button.clicked.connect(self.update_yt_dlp)
+        
+        return group
+    
+    def _create_ffmpeg_group(self) -> QGroupBox:
+        """创建 ffmpeg 组件版本信息组"""
+        group = QGroupBox("ffmpeg 版本信息")
+        group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        """)
+        
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 15, 12, 12)
+        layout.setSpacing(8)
+        
+        # 描述标签
+        desc_label = QLabel("音视频处理和格式转换组件")
+        desc_label.setStyleSheet("color: #6c757d; font-size: 11px; font-weight: normal;")
+        layout.addWidget(desc_label)
+        
+        # 版本信息网格
+        info_grid = QGridLayout()
+        info_grid.setSpacing(8)
+        
+        # 状态图标
+        self.ffmpeg_status_icon = QLabel("⟳")
+        self.ffmpeg_status_icon.setStyleSheet("font-size: 24px; color: #6c757d;")
+        self.ffmpeg_status_icon.setFixedWidth(40)
+        self.ffmpeg_status_icon.setAlignment(Qt.AlignCenter)
+        info_grid.addWidget(self.ffmpeg_status_icon, 0, 0, 3, 1)
+        
+        # 当前版本
+        info_grid.addWidget(QLabel("当前版本:"), 0, 1)
+        self.ffmpeg_current_version_label = QLabel("检查中...")
+        self.ffmpeg_current_version_label.setStyleSheet("font-weight: bold;")
+        info_grid.addWidget(self.ffmpeg_current_version_label, 0, 2)
+        
+        # 最新版本
+        info_grid.addWidget(QLabel("最新版本:"), 1, 1)
+        self.ffmpeg_latest_version_label = QLabel("检查中...")
+        info_grid.addWidget(self.ffmpeg_latest_version_label, 1, 2)
+        
+        # 文件大小
+        info_grid.addWidget(QLabel("文件大小:"), 2, 1)
+        self.ffmpeg_file_size_label = QLabel("--")
+        self.ffmpeg_file_size_label.setStyleSheet("color: #6c757d;")
+        info_grid.addWidget(self.ffmpeg_file_size_label, 2, 2)
+        
+        # 安装路径
+        info_grid.addWidget(QLabel("安装路径:"), 3, 1)
+        self.ffmpeg_install_path_label = QLabel("--")
+        self.ffmpeg_install_path_label.setStyleSheet("color: #6c757d; font-size: 10px;")
+        self.ffmpeg_install_path_label.setWordWrap(True)
+        info_grid.addWidget(self.ffmpeg_install_path_label, 3, 2)
+        
+        info_grid.setColumnStretch(2, 1)
+        layout.addLayout(info_grid)
+        
+        # 进度条和按钮
+        progress_layout = QHBoxLayout()
+        
+        self.ffmpeg_update_button = QPushButton("更新")
+        self.ffmpeg_update_button.setMinimumWidth(80)
+        self.ffmpeg_update_button.setEnabled(False)
+        self.ffmpeg_update_button.setStyleSheet("""
+            QPushButton {
+                padding: 6px 12px;
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+            }
+        """)
+        self.ffmpeg_update_button.clicked.connect(self.update_ffmpeg)
+        progress_layout.addWidget(self.ffmpeg_update_button)
+        
+        self.ffmpeg_progress_bar = QProgressBar()
+        self.ffmpeg_progress_bar.setRange(0, 100)
+        self.ffmpeg_progress_bar.setValue(0)
+        self.ffmpeg_progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                text-align: center;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #28a745;
+                border-radius: 3px;
+            }
+        """)
+        progress_layout.addWidget(self.ffmpeg_progress_bar)
+        
+        layout.addLayout(progress_layout)
+        
+        # 状态标签
+        self.ffmpeg_status_label = QLabel("")
+        self.ffmpeg_status_label.setStyleSheet("color: #6c757d; font-size: 11px;")
+        layout.addWidget(self.ffmpeg_status_label)
+        
+        return group
+    
+    def _create_release_notes_group(self) -> QGroupBox:
+        """创建 Release Notes 展示区域"""
+        group = QGroupBox("📋 更新日志")
+        group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        """)
+        
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 15, 12, 12)
+        layout.setSpacing(8)
+        
+        # 选择标签页的按钮
+        tab_layout = QHBoxLayout()
+        
+        self.yt_dlp_notes_btn = QPushButton("yt-dlp")
+        self.yt_dlp_notes_btn.setCheckable(True)
+        self.yt_dlp_notes_btn.setChecked(True)
+        self.yt_dlp_notes_btn.setStyleSheet("""
+            QPushButton {
+                padding: 4px 12px;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                background-color: #007bff;
+                color: white;
+            }
+            QPushButton:!checked {
+                background-color: white;
+                color: #495057;
+            }
+            QPushButton:hover:!checked {
+                background-color: #e9ecef;
+            }
+        """)
+        self.yt_dlp_notes_btn.clicked.connect(lambda: self._switch_release_notes('yt_dlp'))
+        tab_layout.addWidget(self.yt_dlp_notes_btn)
+        
+        self.ffmpeg_notes_btn = QPushButton("ffmpeg")
+        self.ffmpeg_notes_btn.setCheckable(True)
+        self.ffmpeg_notes_btn.setStyleSheet("""
+            QPushButton {
+                padding: 4px 12px;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                background-color: white;
+                color: #495057;
+            }
+            QPushButton:checked {
+                background-color: #007bff;
+                color: white;
+            }
+            QPushButton:hover:!checked {
+                background-color: #e9ecef;
+            }
+        """)
+        self.ffmpeg_notes_btn.clicked.connect(lambda: self._switch_release_notes('ffmpeg'))
+        tab_layout.addWidget(self.ffmpeg_notes_btn)
+        
+        tab_layout.addStretch()
+        layout.addLayout(tab_layout)
+        
+        # Release Notes 文本框
+        self.release_notes_text = QTextEdit()
+        self.release_notes_text.setReadOnly(True)
+        self.release_notes_text.setMaximumHeight(150)
+        self.release_notes_text.setPlaceholderText("点击「检查更新」获取最新的更新日志...")
+        self.release_notes_text.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                padding: 8px;
+                background-color: #f8f9fa;
+                font-size: 11px;
+                font-family: Consolas, Monaco, monospace;
+            }
+        """)
+        layout.addWidget(self.release_notes_text)
+        
+        return group
+    
+    def _switch_release_notes(self, component: str):
+        """切换 Release Notes 显示"""
+        if component == 'yt_dlp':
+            self.yt_dlp_notes_btn.setChecked(True)
+            self.ffmpeg_notes_btn.setChecked(False)
+            self.release_notes_text.setText(self.yt_dlp_release_notes or "暂无更新日志")
+        else:
+            self.yt_dlp_notes_btn.setChecked(False)
+            self.ffmpeg_notes_btn.setChecked(True)
+            self.release_notes_text.setText(self.ffmpeg_release_notes or "暂无更新日志")
+        
+        # 更新按钮样式
+        self._update_notes_button_style()
+    
+    def _update_notes_button_style(self):
+        """更新 notes 按钮样式"""
+        checked_style = """
+            QPushButton {
+                padding: 4px 12px;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                background-color: #007bff;
+                color: white;
+            }
+        """
+        unchecked_style = """
+            QPushButton {
+                padding: 4px 12px;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                background-color: white;
+                color: #495057;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+            }
+        """
+        
+        if self.yt_dlp_notes_btn.isChecked():
+            self.yt_dlp_notes_btn.setStyleSheet(checked_style)
+            self.ffmpeg_notes_btn.setStyleSheet(unchecked_style)
+        else:
+            self.yt_dlp_notes_btn.setStyleSheet(unchecked_style)
+            self.ffmpeg_notes_btn.setStyleSheet(checked_style)
+    
+    def _update_status_icon(self, icon_label: QLabel, status: str):
+        """更新状态图标"""
+        icon, color = self.STATUS_ICONS.get(status, ('?', '#6c757d'))
+        icon_label.setText(icon)
+        icon_label.setStyleSheet(f"font-size: 24px; color: {color};")
+    
+    def _update_last_check_label(self):
+        """更新上次检查时间标签"""
+        last_check = self.config_manager.get('last_version_check', 0)
+        if last_check > 0:
+            check_time = datetime.fromtimestamp(last_check)
+            time_str = check_time.strftime("%Y-%m-%d %H:%M:%S")
+            self.last_check_label.setText(f"⏱ 上次检查时间: {time_str}")
+        else:
+            self.last_check_label.setText("⏱ 上次检查时间: 从未检查")
+    
+    def _save_check_time(self):
+        """保存检查时间"""
+        self.config_manager.set('last_version_check', int(time.time()))
+        self.config_manager.save_config()
+        self._update_last_check_label()
     
     def update_status_message(self, message):
         """更新状态栏消息"""
@@ -294,9 +695,17 @@ class VersionTab(QWidget):
         # 禁用检查更新按钮
         self.check_updates_button.setEnabled(False)
         
+        # 更新状态图标为检查中
+        self._update_status_icon(self.yt_dlp_status_icon, 'checking')
+        self._update_status_icon(self.ffmpeg_status_icon, 'checking')
+        
         # 更新状态
-        self.yt_dlp_status_label.setText("正在检查 yt-dlp 版本...")
-        self.ffmpeg_status_label.setText("正在检查 ffmpeg 版本...")
+        self.yt_dlp_status_label.setText("⟳ 正在检查...")
+        self.ffmpeg_status_label.setText("⟳ 正在检查...")
+        self.yt_dlp_current_version_label.setText("检查中...")
+        self.ffmpeg_current_version_label.setText("检查中...")
+        self.yt_dlp_latest_version_label.setText("检查中...")
+        self.ffmpeg_latest_version_label.setText("检查中...")
         
         # 更新状态栏
         self.update_status_message("正在检查版本信息...")
@@ -308,17 +717,28 @@ class VersionTab(QWidget):
         self.version_check_thread.progress_updated.connect(self.update_status_message)
         self.version_check_thread.start()
     
-    def on_version_check_completed(self, yt_dlp_success, yt_dlp_current_version, yt_dlp_has_update, 
-                                  yt_dlp_latest_version, yt_dlp_download_url, ffmpeg_success, 
-                                  ffmpeg_current_version, ffmpeg_has_update, ffmpeg_latest_version, 
-                                  ffmpeg_download_url):
+    def on_version_check_completed(self, result: dict):
         """版本检查完成回调"""
+        # 保存检查时间
+        self._save_check_time()
+        
+        # 获取 yt-dlp 信息
+        yt_dlp_info = result.get('yt_dlp', {})
+        yt_dlp_success = yt_dlp_info.get('success', False)
+        yt_dlp_current_version = yt_dlp_info.get('current_version', '')
+        yt_dlp_has_update = yt_dlp_info.get('has_update', False)
+        yt_dlp_latest_version = yt_dlp_info.get('latest_version', '')
+        yt_dlp_download_url = yt_dlp_info.get('download_url', '')
+        yt_dlp_release_notes = yt_dlp_info.get('release_notes', '')
+        yt_dlp_file_size = yt_dlp_info.get('file_size', '--')
+        yt_dlp_install_path = yt_dlp_info.get('install_path', '--')
+        
         # 更新 yt-dlp 版本信息
         if yt_dlp_success:
             self.yt_dlp_current_version = yt_dlp_current_version
             self.yt_dlp_current_version_label.setText(yt_dlp_current_version)
         else:
-            self.yt_dlp_current_version_label.setText("未安装或无法获取")
+            self.yt_dlp_current_version_label.setText("未安装")
         
         if yt_dlp_latest_version:
             self.yt_dlp_latest_version = yt_dlp_latest_version
@@ -326,29 +746,48 @@ class VersionTab(QWidget):
         else:
             self.yt_dlp_latest_version_label.setText("无法获取")
         
+        # 更新 yt-dlp 附加信息
+        self.yt_dlp_file_size_label.setText(yt_dlp_file_size)
+        self.yt_dlp_install_path_label.setText(yt_dlp_install_path)
+        self.yt_dlp_release_notes = yt_dlp_release_notes
+        
         # 保存下载链接
         self.yt_dlp_download_url = yt_dlp_download_url
         
-        # 判断yt-dlp按钮状态
+        # 判断yt-dlp按钮状态和图标
         if not yt_dlp_success:
             self.yt_dlp_update_button.setText("下载")
             self.yt_dlp_update_button.setEnabled(True)
-            self.yt_dlp_status_label.setText("未安装，需下载")
+            self.yt_dlp_status_label.setText("❌ 未安装，需下载")
+            self._update_status_icon(self.yt_dlp_status_icon, 'not_installed')
         elif yt_dlp_has_update and yt_dlp_download_url:
             self.yt_dlp_update_button.setText("更新")
             self.yt_dlp_update_button.setEnabled(True)
-            self.yt_dlp_status_label.setText("有新版本可用")
+            self.yt_dlp_status_label.setText("⬆ 有新版本可用")
+            self._update_status_icon(self.yt_dlp_status_icon, 'update')
         else:
             self.yt_dlp_update_button.setText("更新")
             self.yt_dlp_update_button.setEnabled(False)
-            self.yt_dlp_status_label.setText("已是最新版本")
+            self.yt_dlp_status_label.setText("✓ 已是最新版本")
+            self._update_status_icon(self.yt_dlp_status_icon, 'latest')
+        
+        # 获取 ffmpeg 信息
+        ffmpeg_info = result.get('ffmpeg', {})
+        ffmpeg_success = ffmpeg_info.get('success', False)
+        ffmpeg_current_version = ffmpeg_info.get('current_version', '')
+        ffmpeg_has_update = ffmpeg_info.get('has_update', False)
+        ffmpeg_latest_version = ffmpeg_info.get('latest_version', '')
+        ffmpeg_download_url = ffmpeg_info.get('download_url', '')
+        ffmpeg_release_notes = ffmpeg_info.get('release_notes', '')
+        ffmpeg_file_size = ffmpeg_info.get('file_size', '--')
+        ffmpeg_install_path = ffmpeg_info.get('install_path', '--')
         
         # 更新 ffmpeg 版本信息
         if ffmpeg_success:
             self.ffmpeg_current_version = ffmpeg_current_version
             self.ffmpeg_current_version_label.setText(ffmpeg_current_version)
         else:
-            self.ffmpeg_current_version_label.setText("未安装或无法获取")
+            self.ffmpeg_current_version_label.setText("未安装")
         
         if ffmpeg_latest_version:
             self.ffmpeg_latest_version = ffmpeg_latest_version
@@ -356,22 +795,36 @@ class VersionTab(QWidget):
         else:
             self.ffmpeg_latest_version_label.setText("无法获取")
         
+        # 更新 ffmpeg 附加信息
+        self.ffmpeg_file_size_label.setText(ffmpeg_file_size)
+        self.ffmpeg_install_path_label.setText(ffmpeg_install_path)
+        self.ffmpeg_release_notes = ffmpeg_release_notes
+        
         # 保存下载链接
         self.ffmpeg_download_url = ffmpeg_download_url
         
-        # 判断ffmpeg按钮状态
+        # 判断ffmpeg按钮状态和图标
         if not ffmpeg_success:
             self.ffmpeg_update_button.setText("下载")
             self.ffmpeg_update_button.setEnabled(True)
-            self.ffmpeg_status_label.setText("未安装，需下载")
+            self.ffmpeg_status_label.setText("❌ 未安装，需下载")
+            self._update_status_icon(self.ffmpeg_status_icon, 'not_installed')
         elif ffmpeg_has_update and ffmpeg_download_url:
             self.ffmpeg_update_button.setText("更新")
             self.ffmpeg_update_button.setEnabled(True)
-            self.ffmpeg_status_label.setText("有新版本可用")
+            self.ffmpeg_status_label.setText("⬆ 有新版本可用")
+            self._update_status_icon(self.ffmpeg_status_icon, 'update')
         else:
             self.ffmpeg_update_button.setText("更新")
             self.ffmpeg_update_button.setEnabled(False)
-            self.ffmpeg_status_label.setText("已是最新版本")
+            self.ffmpeg_status_label.setText("✓ 已是最新版本")
+            self._update_status_icon(self.ffmpeg_status_icon, 'latest')
+        
+        # 更新 Release Notes 显示
+        if self.yt_dlp_notes_btn.isChecked():
+            self.release_notes_text.setText(self.yt_dlp_release_notes or "暂无更新日志")
+        else:
+            self.release_notes_text.setText(self.ffmpeg_release_notes or "暂无更新日志")
         
         # 启用检查更新按钮
         self.check_updates_button.setEnabled(True)
@@ -382,8 +835,15 @@ class VersionTab(QWidget):
     def on_version_check_error(self, error_message):
         """版本检查错误回调"""
         QMessageBox.critical(self, "错误", f"检查版本时发生错误: {error_message}")
-        self.yt_dlp_status_label.setText("检查失败")
-        self.ffmpeg_status_label.setText("检查失败")
+        
+        # 更新状态标签和图标
+        self.yt_dlp_status_label.setText("⚠ 检查失败")
+        self.ffmpeg_status_label.setText("⚠ 检查失败")
+        self.yt_dlp_current_version_label.setText("检查失败")
+        self.ffmpeg_current_version_label.setText("检查失败")
+        self._update_status_icon(self.yt_dlp_status_icon, 'error')
+        self._update_status_icon(self.ffmpeg_status_icon, 'error')
+        
         self.check_updates_button.setEnabled(True)
         
         # 更新状态栏
@@ -393,7 +853,7 @@ class VersionTab(QWidget):
         self.logger.error(f"检查版本时发生错误: {error_message}")
     
     def update_yt_dlp(self):
-        """更新 yt-dlp"""
+        """更新/下载 yt-dlp"""
         # 检查是否已在更新
         if self.is_updating_yt_dlp:
             return
@@ -403,11 +863,21 @@ class VersionTab(QWidget):
             QMessageBox.warning(self, "错误", "无法获取 yt-dlp 下载链接")
             return
         
-        # 确认更新
+        # 判断是下载还是更新
+        is_download = not self.yt_dlp_current_version or self.yt_dlp_current_version == "未安装"
+        
+        # 确认对话框
+        if is_download:
+            title = "确认下载"
+            message = f"确定要下载 yt-dlp {self.yt_dlp_latest_version} 吗？"
+        else:
+            title = "确认更新"
+            message = f"确定要将 yt-dlp 从 {self.yt_dlp_current_version} 更新到 {self.yt_dlp_latest_version} 吗？"
+        
         reply = QMessageBox.question(
             self,
-            "确认更新",
-            f"确定要将 yt-dlp 从 {self.yt_dlp_current_version} 更新到 {self.yt_dlp_latest_version} 吗？",
+            title,
+            message,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -419,7 +889,8 @@ class VersionTab(QWidget):
         self.is_updating_yt_dlp = True
         self.yt_dlp_update_button.setEnabled(False)
         self.yt_dlp_progress_bar.setValue(0)
-        self.yt_dlp_status_label.setText("正在更新...")
+        action_text = "下载" if is_download else "更新"
+        self.yt_dlp_status_label.setText(f"⬇ 正在{action_text}...")
         
         # 更新状态栏
         self.update_status_message("正在更新 yt-dlp...")
@@ -456,7 +927,11 @@ class VersionTab(QWidget):
             self.yt_dlp_current_version = result
             self.yt_dlp_current_version_label.setText(result)
             self.yt_dlp_update_button.setEnabled(False)
-            self.yt_dlp_status_label.setText("更新成功")
+            self.yt_dlp_status_label.setText("✓ 更新成功")
+            self._update_status_icon(self.yt_dlp_status_icon, 'latest')
+            
+            # 更新文件大小
+            self.yt_dlp_file_size_label.setText(self.version_manager.get_yt_dlp_file_size())
             
             # 显示成功消息
             QMessageBox.information(self, "更新成功", f"yt-dlp 已成功更新到版本 {result}")
@@ -466,7 +941,8 @@ class VersionTab(QWidget):
         else:
             # 启用更新按钮
             self.yt_dlp_update_button.setEnabled(True)
-            self.yt_dlp_status_label.setText(f"更新失败: {result}")
+            self.yt_dlp_status_label.setText(f"⚠ 更新失败: {result}")
+            self._update_status_icon(self.yt_dlp_status_icon, 'error')
             
             # 显示错误消息
             QMessageBox.critical(self, "更新失败", f"yt-dlp 更新失败: {result}")
@@ -475,7 +951,7 @@ class VersionTab(QWidget):
             self.update_status_message(f"yt-dlp 更新失败: {result}")
     
     def update_ffmpeg(self):
-        """更新 ffmpeg"""
+        """更新/下载 ffmpeg"""
         # 检查是否已在更新
         if self.is_updating_ffmpeg:
             return
@@ -485,11 +961,21 @@ class VersionTab(QWidget):
             QMessageBox.warning(self, "错误", "无法获取 ffmpeg 下载链接")
             return
         
-        # 确认更新
+        # 判断是下载还是更新
+        is_download = not self.ffmpeg_current_version or self.ffmpeg_current_version == "未安装"
+        
+        # 确认对话框
+        if is_download:
+            title = "确认下载"
+            message = f"确定要下载 ffmpeg {self.ffmpeg_latest_version} 吗？\n\n注意：下载可能需要几分钟时间。"
+        else:
+            title = "确认更新"
+            message = f"确定要将 ffmpeg 从 {self.ffmpeg_current_version} 更新到 {self.ffmpeg_latest_version} 吗？\n\n注意：更新可能需要几分钟时间。"
+        
         reply = QMessageBox.question(
             self,
-            "确认更新",
-            f"确定要将 ffmpeg 从 {self.ffmpeg_current_version} 更新到 {self.ffmpeg_latest_version} 吗？\n\n注意：更新可能需要几分钟时间。",
+            title,
+            message,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -501,10 +987,11 @@ class VersionTab(QWidget):
         self.is_updating_ffmpeg = True
         self.ffmpeg_update_button.setEnabled(False)
         self.ffmpeg_progress_bar.setValue(0)
-        self.ffmpeg_status_label.setText("正在更新...")
+        action_text = "下载" if is_download else "更新"
+        self.ffmpeg_status_label.setText(f"⬇ 正在{action_text}...")
         
         # 更新状态栏
-        self.update_status_message("正在更新 ffmpeg...")
+        self.update_status_message(f"正在{action_text} ffmpeg...")
         
         # 创建并启动更新工作线程
         self.ffmpeg_update_worker = UpdateWorker(
@@ -538,7 +1025,11 @@ class VersionTab(QWidget):
             self.ffmpeg_current_version = result
             self.ffmpeg_current_version_label.setText(result)
             self.ffmpeg_update_button.setEnabled(False)
-            self.ffmpeg_status_label.setText("更新成功")
+            self.ffmpeg_status_label.setText("✓ 更新成功")
+            self._update_status_icon(self.ffmpeg_status_icon, 'latest')
+            
+            # 更新文件大小
+            self.ffmpeg_file_size_label.setText(self.version_manager.get_ffmpeg_total_size())
             
             # 显示成功消息
             QMessageBox.information(self, "更新成功", f"ffmpeg 已成功更新到版本 {result}")
@@ -548,7 +1039,8 @@ class VersionTab(QWidget):
         else:
             # 启用更新按钮
             self.ffmpeg_update_button.setEnabled(True)
-            self.ffmpeg_status_label.setText(f"更新失败: {result}")
+            self.ffmpeg_status_label.setText(f"⚠ 更新失败: {result}")
+            self._update_status_icon(self.ffmpeg_status_icon, 'error')
             
             # 显示错误消息
             QMessageBox.critical(self, "更新失败", f"ffmpeg 更新失败: {result}")
@@ -558,9 +1050,13 @@ class VersionTab(QWidget):
 
     def init_binaries(self):
         """初始化下载必要的二进制文件"""
+        # 更新状态图标
+        self._update_status_icon(self.yt_dlp_status_icon, 'checking')
+        self._update_status_icon(self.ffmpeg_status_icon, 'checking')
+        
         # 更新状态
-        self.yt_dlp_status_label.setText("正在初始化下载...")
-        self.ffmpeg_status_label.setText("正在初始化下载...")
+        self.yt_dlp_status_label.setText("⬇ 正在初始化下载...")
+        self.ffmpeg_status_label.setText("⬇ 正在初始化下载...")
         
         # 更新状态栏
         self.update_status_message("正在初始化下载必要的文件...")
@@ -583,8 +1079,8 @@ class VersionTab(QWidget):
         """更新初始化进度"""
         self.yt_dlp_progress_bar.setValue(progress)
         self.ffmpeg_progress_bar.setValue(progress)
-        self.yt_dlp_status_label.setText(status)
-        self.ffmpeg_status_label.setText(status)
+        self.yt_dlp_status_label.setText(f"⬇ {status}")
+        self.ffmpeg_status_label.setText(f"⬇ {status}")
         
         # 更新状态栏
         self.update_status_message(f"初始化下载: {progress}% - {status}")
@@ -593,8 +1089,10 @@ class VersionTab(QWidget):
         """初始化完成"""
         if success:
             # 更新状态
-            self.yt_dlp_status_label.setText("初始化完成")
-            self.ffmpeg_status_label.setText("初始化完成")
+            self.yt_dlp_status_label.setText("✓ 初始化完成")
+            self.ffmpeg_status_label.setText("✓ 初始化完成")
+            self._update_status_icon(self.yt_dlp_status_icon, 'latest')
+            self._update_status_icon(self.ffmpeg_status_icon, 'latest')
             
             # 更新状态栏
             self.update_status_message("初始化下载完成")
@@ -603,8 +1101,10 @@ class VersionTab(QWidget):
             self.check_versions()
         else:
             # 更新状态
-            self.yt_dlp_status_label.setText(f"初始化失败: {result}")
-            self.ffmpeg_status_label.setText(f"初始化失败: {result}")
+            self.yt_dlp_status_label.setText(f"⚠ 初始化失败: {result}")
+            self.ffmpeg_status_label.setText(f"⚠ 初始化失败: {result}")
+            self._update_status_icon(self.yt_dlp_status_icon, 'error')
+            self._update_status_icon(self.ffmpeg_status_icon, 'error')
             
             # 更新状态栏
             self.update_status_message(f"初始化下载失败: {result}")

@@ -8,6 +8,15 @@ YouTube DownLoader 是一款基于 Python 开发的免费开源桌面应用程�
 
 ## 更新日志
 
+### v1.2.0 （2026-02-03）
+- **新增**: [批量下载作者所有作者视频功能](https://github.com/hwangzhun/youtube_downloader/issues/1) (#1)。 
+- **新增**：网络代理设置功能 
+
+- **优化**: Cookie 功能，现在调用浏览器登录来获取 Cookie（需要本地电脑安装了 Chrome）,也可以手动导入 Netscape 格式的 Cookie。
+- **优化**：视频列表/多视频下载 功能
+
+- **删除**：删除自动获取 Cookie 功能，因为之前依赖的 browser_cookie3 来获取本地已存储的 Cookie，因为后面 Chrome 更新了加密方式 browser_cookie3 没有更新，故放弃此方法。
+
 ### v1.1.1 （2025-06-22）
 - **修复**: [输入视频列表链接会下载整个列表的问题](https://github.com/hwangzhun/youtube_downloader/issues/2) (#2)。  
 - **新增**: Cookie 功能正式可用（支持自动获取和手动导入）。
@@ -22,6 +31,7 @@ YouTube DownLoader 是一款基于 Python 开发的免费开源桌面应用程�
 - **操作系统**：Windows 10 或 Windows 11  
 - **硬盘空间**：至少 200MB 可用空间  
 - **网络连接**：稳定的互联网连接  (科学上网)
+- **JavaScript 运行时**（推荐）：Node.js 或 Deno（用于 YouTube 视频信息提取）
 
 ## 主要功能
 
@@ -66,6 +76,10 @@ YouTube DownLoader 是一款基于 Python 开发的免费开源桌面应用程�
 2. 下载高清视频可能需要较长时间，请耐心等待
 3. 若下载失败，可尝试使用 Cookie 或选择其他视频质量
 4. 更新 `ffmpeg` 可能需要较长时间，因其文件较大
+5. **重要**：由于 YouTube 现在需要 JavaScript 来提取视频信息，建议安装 Node.js 或 Deno：
+   - **Node.js**（推荐）：从 [nodejs.org](https://nodejs.org/) 下载并安装
+   - **Deno**：从 [deno.land](https://deno.land/) 下载并安装
+   - 安装后程序会自动检测并使用，无需额外配置
 
 ## 常见问题
 
@@ -80,6 +94,13 @@ YouTube DownLoader 是一款基于 Python 开发的免费开源桌面应用程�
 
 ### Q4: 如何更新 `yt-dlp` 和 `ffmpeg`？
 **A**: 在"版本信息"标签页中点击对应的"更新"按钮即可。
+
+### Q5: 出现 "No supported JavaScript runtime could be found" 错误怎么办？
+**A**: 这是因为 YouTube 现在需要 JavaScript 运行时来提取视频信息。请安装以下任一运行时：
+- **Node.js**（推荐）：访问 [nodejs.org](https://nodejs.org/) 下载并安装最新 LTS 版本
+- **Deno**：访问 [deno.land](https://deno.land/) 下载并安装
+
+安装完成后，确保运行时在系统 PATH 中（通常安装程序会自动配置），然后重启应用程序即可。程序会自动检测并使用已安装的 JavaScript 运行时。
 
 ## 技术支持
 

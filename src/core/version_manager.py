@@ -4,7 +4,6 @@ YouTube Downloader 版本管理模块
 """
 import os
 import sys
-import subprocess
 import re
 import json
 import time
@@ -14,14 +13,11 @@ import zipfile
 import requests
 from typing import Dict, Tuple, Optional, List
 
-# 添加 Windows 特定的导入
-if os.name == 'nt':
-    import subprocess
-    CREATE_NO_WINDOW = 0x08000000
-else:
-    CREATE_NO_WINDOW = 0
-
 from src.utils.logger import LoggerManager
+from src.utils.platform import (
+    run_subprocess, get_yt_dlp_path, get_ffmpeg_path, 
+    get_binaries_dir, ensure_directory
+)
 
 
 class VersionManager:
@@ -38,15 +34,12 @@ class VersionManager:
         # 初始化日誌
         self.logger = LoggerManager().get_logger()
         
-        # 獲取當前腳本所在目錄
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
         # 設置 yt-dlp 和 ffmpeg 路徑
-        self.yt_dlp_dir = os.path.join(base_dir, 'resources', 'binaries', 'yt-dlp')
-        self.ffmpeg_dir = os.path.join(base_dir, 'resources', 'binaries', 'ffmpeg')
+        self.yt_dlp_dir = str(get_binaries_dir() / 'yt-dlp')
+        self.ffmpeg_dir = str(get_binaries_dir() / 'ffmpeg')
         
-        self.yt_dlp_path = yt_dlp_path or os.path.join(self.yt_dlp_dir, 'yt-dlp.exe')
-        self.ffmpeg_path = ffmpeg_path or os.path.join(self.ffmpeg_dir, 'ffmpeg.exe')
+        self.yt_dlp_path = yt_dlp_path or str(get_yt_dlp_path())
+        self.ffmpeg_path = ffmpeg_path or str(get_ffmpeg_path())
         
         # 记录初始化信息
         self.logger.info(f"初始化版本管理器 - yt-dlp路径: {self.yt_dlp_path}, ffmpeg路径: {self.ffmpeg_path}")
@@ -66,11 +59,35 @@ class VersionManager:
     def _ensure_directories(self):
         """确保必要的目录存在"""
         try:
-            os.makedirs(self.yt_dlp_dir, exist_ok=True)
-            os.makedirs(self.ffmpeg_dir, exist_ok=True)
+            ensure_directory(self.yt_dlp_dir)
+            ensure_directory(self.ffmpeg_dir)
             self.logger.info("创建必要的目录")
         except Exception as e:
             self.logger.error(f"创建目录时发生错误: {str(e)}", exc_info=True)
+    
+    def _create_download_session(self) -> requests.Session:
+        """
+        创建带有重试机制的下载会话
+        
+        Returns:
+            配置好的 requests.Session
+        """
+        from urllib3.util.retry import Retry
+        from requests.adapters import HTTPAdapter
+        
+        session = requests.Session()
+        
+        # 配置重试策略
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        
+        return session
     
     def check_and_download_binaries(self, progress_callback=None) -> Tuple[bool, str]:
         """
@@ -85,12 +102,18 @@ class VersionManager:
         try:
             self.logger.info("开始检查二进制文件")
             
+            # 创建下载会话
+            session = self._create_download_session()
+            
             # 檢查 yt-dlp
             if not os.path.exists(self.yt_dlp_path):
                 self.logger.info("yt-dlp 不存在，开始下载")
                 
+                # 确保目录存在
+                os.makedirs(self.yt_dlp_dir, exist_ok=True)
+                
                 # 获取下载 URL
-                response = requests.get(self.yt_dlp_api_url)
+                response = session.get(self.yt_dlp_api_url, timeout=30)
                 response.raise_for_status()
                 release_info = response.json()
                 
@@ -109,7 +132,7 @@ class VersionManager:
                 if progress_callback:
                     progress_callback(0, "正在下载 yt-dlp...")
                 
-                response = requests.get(download_url)
+                response = session.get(download_url, timeout=(30, 300))
                 response.raise_for_status()
                 
                 with open(self.yt_dlp_path, 'wb') as f:
@@ -125,7 +148,7 @@ class VersionManager:
                 self.logger.info("ffmpeg 不存在，开始下载")
                 
                 # 获取下载 URL
-                response = requests.get(self.ffmpeg_api_url)
+                response = session.get(self.ffmpeg_api_url, timeout=30)
                 response.raise_for_status()
                 release_info = response.json()
                 
@@ -165,12 +188,7 @@ class VersionManager:
         
         try:
             cmd = [self.yt_dlp_path, '--version']
-            result = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True,
-                creationflags=CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
+            result = run_subprocess(cmd)
             
             if result.returncode == 0:
                 version = result.stdout.strip()
@@ -198,12 +216,7 @@ class VersionManager:
         
         try:
             cmd = [self.ffmpeg_path, '-version']
-            result = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True,
-                creationflags=CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
+            result = run_subprocess(cmd)
             
             if result.returncode == 0:
                 # 提取版本號
@@ -237,10 +250,12 @@ class VersionManager:
         try:
             # 获取当前版本
             current_success, current_version = self.get_yt_dlp_version()
-            if not current_success:
-                return False, "", current_version
             
-            self.logger.info(f"检查 yt-dlp 更新 - 当前版本: {current_version}")
+            if current_success:
+                self.logger.info(f"检查 yt-dlp 更新 - 当前版本: {current_version}")
+            else:
+                self.logger.info("yt-dlp 未安装，将获取最新版本下载链接")
+                current_version = ""
             
             # 獲取最新版本信息
             response = requests.get(self.yt_dlp_api_url)
@@ -250,22 +265,30 @@ class VersionManager:
             latest_version = release_info['tag_name']
             self.logger.info(f"yt-dlp 最新版本: {latest_version}")
             
+            # 保存 release_info 供后续获取 release notes
+            self._yt_dlp_release_info = release_info
+            
+            # 查找 Windows 可执行文件下载 URL
+            download_url = ""
+            for asset in release_info['assets']:
+                if asset['name'] == 'yt-dlp.exe':
+                    download_url = asset['browser_download_url']
+                    break
+            
+            if not download_url:
+                error_msg = "未找到 Windows 可执行文件下载链接"
+                self.logger.error(error_msg)
+                return False, latest_version, error_msg
+            
+            # 如果组件未安装，返回需要下载
+            if not current_success:
+                self.logger.info(f"yt-dlp 未安装，需要下载: {latest_version}")
+                return True, latest_version, download_url
+            
             # 比較版本
             if latest_version.strip() != current_version.strip():
-                # 查找 Windows 可执行文件下载 URL
-                download_url = ""
-                for asset in release_info['assets']:
-                    if asset['name'] == 'yt-dlp.exe':
-                        download_url = asset['browser_download_url']
-                        break
-                
-                if download_url:
-                    self.logger.info(f"发现 yt-dlp 新版本: {latest_version}")
-                    return True, latest_version, download_url
-                else:
-                    error_msg = "未找到 Windows 可执行文件下载链接"
-                    self.logger.error(error_msg)
-                    return False, latest_version, error_msg
+                self.logger.info(f"发现 yt-dlp 新版本: {latest_version}")
+                return True, latest_version, download_url
             else:
                 self.logger.info("yt-dlp 已是最新版本")
                 return False, latest_version, "已是最新版本"
@@ -273,6 +296,111 @@ class VersionManager:
             error_msg = f"检查更新时发生错误: {str(e)}"
             self.logger.error(error_msg, exc_info=True)
             return False, "", error_msg
+    
+    def get_yt_dlp_release_notes(self) -> str:
+        """
+        获取 yt-dlp 的 Release Notes
+        
+        Returns:
+            Release Notes 内容
+        """
+        try:
+            if hasattr(self, '_yt_dlp_release_info') and self._yt_dlp_release_info:
+                body = self._yt_dlp_release_info.get('body', '')
+                # 截取前 1000 个字符，避免太长
+                if len(body) > 1000:
+                    body = body[:1000] + "\n..."
+                return body
+            
+            # 如果没有缓存，重新获取
+            response = requests.get(self.yt_dlp_api_url)
+            response.raise_for_status()
+            release_info = response.json()
+            body = release_info.get('body', '')
+            if len(body) > 1000:
+                body = body[:1000] + "\n..."
+            return body
+        except Exception as e:
+            self.logger.error(f"获取 yt-dlp Release Notes 失败: {str(e)}")
+            return "无法获取更新说明"
+    
+    def get_ffmpeg_release_notes(self) -> str:
+        """
+        获取 ffmpeg 的 Release Notes
+        
+        Returns:
+            Release Notes 内容
+        """
+        try:
+            if hasattr(self, '_ffmpeg_release_info') and self._ffmpeg_release_info:
+                body = self._ffmpeg_release_info.get('body', '')
+                if len(body) > 1000:
+                    body = body[:1000] + "\n..."
+                return body
+            
+            # 如果没有缓存，重新获取
+            response = requests.get(self.ffmpeg_api_url)
+            response.raise_for_status()
+            release_info = response.json()
+            body = release_info.get('body', '')
+            if len(body) > 1000:
+                body = body[:1000] + "\n..."
+            return body
+        except Exception as e:
+            self.logger.error(f"获取 ffmpeg Release Notes 失败: {str(e)}")
+            return "无法获取更新说明"
+    
+    def get_file_size(self, file_path: str) -> str:
+        """
+        获取文件大小的人类可读格式
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            文件大小字符串
+        """
+        try:
+            if not os.path.exists(file_path):
+                return "未安装"
+            
+            size = os.path.getsize(file_path)
+            
+            # 转换为人类可读格式
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if size < 1024:
+                    return f"{size:.1f} {unit}"
+                size /= 1024
+            return f"{size:.1f} TB"
+        except Exception as e:
+            self.logger.error(f"获取文件大小失败: {str(e)}")
+            return "未知"
+    
+    def get_yt_dlp_file_size(self) -> str:
+        """获取 yt-dlp 文件大小"""
+        return self.get_file_size(self.yt_dlp_path)
+    
+    def get_ffmpeg_total_size(self) -> str:
+        """获取 ffmpeg 目录总大小"""
+        try:
+            if not os.path.exists(self.ffmpeg_dir):
+                return "未安装"
+            
+            total_size = 0
+            for file in ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']:
+                file_path = os.path.join(self.ffmpeg_dir, file)
+                if os.path.exists(file_path):
+                    total_size += os.path.getsize(file_path)
+            
+            # 转换为人类可读格式
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if total_size < 1024:
+                    return f"{total_size:.1f} {unit}"
+                total_size /= 1024
+            return f"{total_size:.1f} TB"
+        except Exception as e:
+            self.logger.error(f"获取 ffmpeg 大小失败: {str(e)}")
+            return "未知"
     
     def check_ffmpeg_update(self) -> Tuple[bool, str, str]:
         """
@@ -284,15 +412,20 @@ class VersionManager:
         try:
             # 获取当前版本
             current_success, current_version = self.get_ffmpeg_version()
-            if not current_success:
-                return False, "", current_version
             
-            self.logger.info(f"检查 ffmpeg 更新 - 当前版本: {current_version}")
+            if current_success:
+                self.logger.info(f"检查 ffmpeg 更新 - 当前版本: {current_version}")
+            else:
+                self.logger.info("ffmpeg 未安装，将获取最新版本下载链接")
+                current_version = ""
             
             # 获取最新版本信息
             response = requests.get(self.ffmpeg_api_url)
             response.raise_for_status()
             release_info = response.json()
+            
+            # 保存 release_info 供后续获取 release notes
+            self._ffmpeg_release_info = release_info
             
             # 从发布信息中提取版本号
             latest_version = release_info['tag_name'].replace('n', '')  # 移除 'n' 前缀
@@ -323,6 +456,11 @@ class VersionManager:
                 error_msg = "未找到适合的下載鏈接"
                 self.logger.error(error_msg)
                 return False, latest_version, error_msg
+            
+            # 如果组件未安装，返回需要下载
+            if not current_success:
+                self.logger.info(f"ffmpeg 未安装，需要下载: {latest_version}")
+                return True, latest_version, download_url
             
             # 比較版本（簡單比較，實際上應該更複雜）
             if latest_version != current_version:
@@ -367,8 +505,9 @@ class VersionManager:
             os.close(fd)
             self.logger.info(f"创建临时文件: {temp_file}")
             
-            # 下载文件
-            response = requests.get(download_url, stream=True)
+            # 下载文件 - 使用重试机制和超时
+            session = self._create_download_session()
+            response = session.get(download_url, stream=True, timeout=(30, 300))
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))
@@ -402,6 +541,9 @@ class VersionManager:
             self.update_status = "正在安装 yt-dlp..."
             if progress_callback:
                 progress_callback(95, self.update_status)
+            
+            # 确保目标目录存在
+            os.makedirs(self.yt_dlp_dir, exist_ok=True)
             
             shutil.move(temp_file, self.yt_dlp_path)
             self.logger.info(f"安装新文件: {self.yt_dlp_path}")
@@ -465,8 +607,9 @@ class VersionManager:
             zip_file = os.path.join(temp_dir, 'ffmpeg.zip')
             self.logger.info(f"创建临时目录: {temp_dir}")
             
-            # 下载文件
-            response = requests.get(download_url, stream=True)
+            # 下载文件 - 使用重试机制和超时
+            session = self._create_download_session()
+            response = session.get(download_url, stream=True, timeout=(30, 600))  # ffmpeg 文件较大，超时设长一些
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))

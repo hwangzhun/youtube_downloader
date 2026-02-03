@@ -18,14 +18,9 @@ class ConfigManager:
         Args:
             config_file: 配置文件路徑，如果為 None 則使用默認路徑
         """
-        # 获取应用程序数据目录
-        if sys.platform.startswith('win'):
-            app_data_dir = os.path.join(os.environ.get('APPDATA', ''), 'YouTubeDownloader')
-        else:
-            app_data_dir = os.path.join(os.path.expanduser('~'), '.youtube_downloader')
-        
-        # 确保目录存在
-        os.makedirs(app_data_dir, exist_ok=True)
+        # 获取应用程序配置目录
+        from src.utils.platform import get_config_dir
+        app_data_dir = str(get_config_dir())
         
         # 设置配置文件路径
         self.config_file = config_file or os.path.join(app_data_dir, 'config.json')
@@ -41,7 +36,14 @@ class ConfigManager:
             'show_notifications': True,
             'check_updates': True,
             'last_yt_dlp_check': 0,
-            'last_ffmpeg_check': 0
+            'last_ffmpeg_check': 0,
+            # 代理设置
+            'proxy_enabled': False,
+            'proxy_type': 'http',
+            'proxy_host': '127.0.0.1',
+            'proxy_port': 7890,
+            'proxy_username': '',
+            'proxy_password': ''
         }
         
         # 加载配置
