@@ -1,182 +1,118 @@
-# YouTube DownLoader 视频下载工具使用说明
+# YouTube Downloader
 
-![icon](https://cdn.jsdelivr.net/gh/hwangzhun/youtube_downloader@main/resources/icons/app_icon_horizontal.png "YouTube DownLoader")
+![YouTube Downloader](https://cdn.jsdelivr.net/gh/hwangzhun/youtube_downloader@main/resources/icons/app_icon_horizontal.png "YouTube Downloader")
 
-## 简介
-
-YouTube DownLoader 是一款基于 Python 开发的免费开源桌面应用程序，采用 PyQt5 构建用户界面。市面上大多数 YouTube 下载工具要么收费，要么对普通用户不够友好，因此我们开发了这款简单易用的下载工具。用户可以通过该工具轻松下载 YouTube 视频，支持单条或多条视频链接批量下载，并提供多种实用功能。
-
-## 更新日志
-
-### v1.2.0 （2026-02-03）
-- **新增**: [批量下载作者所有作者视频功能](https://github.com/hwangzhun/youtube_downloader/issues/1) (#1)。 （需要安装 Node.js）
-- **新增**：网络代理设置功能 
-
-- **优化**: Cookie 功能，现在调用浏览器登录来获取 Cookie（需要本地电脑安装了 Chrome）,也可以手动导入 Netscape 格式的 Cookie。
-- **优化**：视频列表/多视频下载 功能
-
-- **删除**：删除自动获取 Cookie 功能，因为之前依赖的 browser_cookie3 来获取本地已存储的 Cookie，因为后面 Chrome 更新了加密方式 browser_cookie3 没有更新，故放弃此方法。
-
-### v1.1.1 （2025-06-22）
-- **修复**: [输入视频列表链接会下载整个列表的问题](https://github.com/hwangzhun/youtube_downloader/issues/2) (#2)。  
-- **新增**: Cookie 功能正式可用（支持自动获取和手动导入）。
-
-### v1.1.0 (2025-06-04)
-- 优化了视频信息解析逻辑，提高解析速度和稳定性
-- 改进了从浏览器获取 Cookie 的方式，支持更多浏览器
-- 新增 Cookie 有效性验证功能，确保下载权限
-
-## 系统要求
-
-- **操作系统**：Windows 10 或 Windows 11  
-- **硬盘空间**：至少 200MB 可用空间  
-- **网络连接**：稳定的互联网连接  (科学上网)
-- **JavaScript 运行时**（推荐）：Node.js 或 Deno（用于 YouTube 视频信息提取）
+一款的开源 YouTube 下载工具。2.0 版本已从 Python/PyQt 重构为
+Tauri 2 + Rust + React，界面更轻量，下载、Cookie 与组件更新由本机 Rust 后端管理。
 
 ## 主要功能
 
-### 1. 单视频下载
-- 支持单个 YouTube 视频链接下载
-- 支持选择视频清晰度和质量，默认提供最高画质选项
+- 单视频解析，可分别选择视频画质与音频质量
+- 多链接批量解析、选择和下载
+- 获取频道视频并批量加入下载列表
+- 下载队列、实时进度、暂停队列及完成后打开目录
+- 网页登录或导入 Netscape 文件获取 Cookie
+- 使用 Windows DPAPI 加密本地 Cookie，仅在任务执行或验证时临时解密
+- 支持 HTTP、HTTPS 和 SOCKS5 代理
+- 检查并更新 `yt-dlp`、`ffmpeg` 与应用版本
+- 明亮/暗黑主题、系统托盘、单实例运行和窗口状态恢复
 
-### 2. 多视频下载
-- 支持批量下载多个视频（每行一个链接）
-- 支持视频列表链接下载
-- 可同时管理多个下载任务
-- 实时显示每个任务的下载状态和进度
+## 系统要求
 
-### 3. 频道下载
-- 支持输入频道 URL 并下载该频道的所有视频
-- 可暂停/恢复获取视频列表
-- 支持自定义下载选项和质量设置
-- 批量管理频道视频下载任务
+### 使用安装包
 
-### 4. Cookie 管理
-- 支持从 Chrome 浏览器获取 Cookie（需要本地安装 Chrome）
-- 支持手动导入 Netscape 格式的 Cookie 文件
-- 解决区域限制或需要登录的视频下载问题
-- Cookie 有效性验证功能
+- Windows 10/11 x64
+- Microsoft Edge WebView2 Runtime
+- 可访问 YouTube 及 GitHub Releases 的网络连接
 
-### 5. 代理设置
-- 支持配置 HTTP/HTTPS/SOCKS5 代理
-- 解决网络访问限制问题
-- 代理设置自动保存
+项目提供两种 NSIS 安装包：
 
-### 6. 下载选项
-- 自定义下载保存位置
-- 支持选择视频清晰度和质量，默认提供最高画质选项
-- 优先下载 MP4 格式，必要时自动转换为兼容格式
+- **Lite**：不附带下载组件，安装后在“版本与组件”页面获取
+- **Core**：内置 `yt-dlp`、`ffmpeg`、`ffprobe` 及必要 DLL，安装后即可使用
 
-### 7. 版本管理
-- 显示 `yt-dlp` 和 `ffmpeg` 的当前版本及最新版本信息
-- 支持一键更新 `yt-dlp` 和 `ffmpeg` 至最新版本
-- 自动检测并提示可用更新
+## 本地开发
 
-## 使用方法
+需要预先安装：
 
-### 单视频下载
-1. 切换到"单视频下载"标签页
-2. 将 YouTube 视频链接粘贴到输入框中
-3. 点击"解析视频信息"按钮获取视频详细信息
-4. 在"Cookie"标签页中设置 Cookie（可选，用于下载受限视频）
-5. 设置下载保存位置（必须设置才能启用下载按钮）
-6. 选择视频质量（默认为最高画质）
-7. 点击"开始下载"按钮启动下载任务
-8. 下载过程中可实时查看进度、速度和剩余时间
-9. 下载完成后将收到系统通知
+- Node.js 22
+- Rust stable
+- Visual Studio Build Tools（Desktop development with C++）
+- WebView2 Runtime
 
-### 多视频下载
-1. 切换到"多视频下载"标签页
-2. 将多个 YouTube 视频链接粘贴到输入框中（每行一个链接，也支持视频列表链接）
-3. 点击"解析视频信息"按钮批量获取视频信息
-4. 为每个视频选择下载质量（可选，默认使用最高画质）
-5. 设置下载保存位置
-6. 点击"开始下载"按钮启动批量下载
-7. 可随时查看每个任务的下载状态和进度
+```powershell
+npm install
+npm run tauri dev
+```
 
-### 频道下载
-1. 切换到"频道下载"标签页
-2. 输入 YouTube 频道 URL（支持频道主页链接或频道视频列表链接）
-3. 点击"获取频道视频"按钮开始获取视频列表
-4. 可随时暂停/恢复获取过程
-5. 获取完成后，选择要下载的视频（默认全选）
-6. 设置下载保存位置和质量选项
-7. 点击"开始下载"按钮批量下载频道视频
+只检查前端：
 
-### Cookie 设置
-1. 切换到"Cookie"标签页
-2. **方式一（推荐）**：点击"从 Chrome 获取 Cookie"按钮（需要本地安装 Chrome 浏览器）
-3. **方式二**：点击"导入 Cookie 文件"按钮，选择 Netscape 格式的 Cookie 文件
-4. Cookie 设置成功后，可用于下载需要登录或受区域限制的视频
+```powershell
+npm run build
+npm test
+```
 
-### 代理设置
-1. 切换到"代理"标签页
-2. 选择代理类型（HTTP/HTTPS/SOCKS5）
-3. 输入代理服务器地址和端口
-4. 如需要，输入用户名和密码
-5. 点击"测试连接"验证代理是否可用
-6. 点击"保存设置"保存代理配置
+检查 Rust 后端：
 
-### 版本管理
-1. 切换到"版本"标签页
-2. 查看 `yt-dlp` 和 `ffmpeg` 的当前版本及最新版本信息
-3. 若有新版本可用，点击对应"更新"按钮进行升级
-4. 更新过程中可查看进度，完成后将显示新版本号
+```powershell
+cargo test --manifest-path src-tauri/Cargo.toml
+```
 
-## 注意事项
-1. **首次运行**：程序会自动下载 `yt-dlp` 和 `ffmpeg`，请确保网络连接正常
-2. **下载时间**：下载高清视频可能需要较长时间，请耐心等待
-3. **下载失败**：若下载失败，可尝试以下方法：
-   - 使用 Cookie 功能（在"Cookie"标签页设置）
-   - 配置代理（在"代理"标签页设置）
-   - 选择其他视频质量
-   - 检查网络连接
-4. **更新工具**：更新 `ffmpeg` 可能需要较长时间，因其文件较大
-5. **JavaScript 运行时**（重要）：由于 YouTube 现在需要 JavaScript 来提取视频信息，建议安装 Node.js 或 Deno：
-   - **Node.js**（推荐）：从 [nodejs.org](https://nodejs.org/) 下载并安装最新 LTS 版本
-   - **Deno**：从 [deno.land](https://deno.land/) 下载并安装
-   - 安装后程序会自动检测并使用，无需额外配置
-6. **Cookie 获取**：从 Chrome 获取 Cookie 功能需要本地安装 Chrome 浏览器
-7. **频道下载**：下载整个频道视频可能需要很长时间，建议分批下载或使用筛选功能
+开发时可以通过 `YTDLP_PATH`、`FFMPEG_PATH` 和 `FFPROBE_PATH` 指向本地组件。
+未设置时，应用会读取自己的应用数据目录，不依赖全局 Python 环境。
 
-## 常见问题
+## 构建安装包
 
-### Q1: 为什么无法下载某些视频？
-**A**: 可能是由于视频存在地区限制或需要登录。建议尝试使用 Cookie 功能解决。
+构建 Lite、Core 或全部变体：
 
-### Q2: 为什么下载按钮无法点击？
-**A**: 必须设置下载保存位置才能启用下载按钮。
+```powershell
+npm run build:lite
+npm run build:core
+npm run build:variants
+```
 
-### Q3: 如何获取最佳视频质量？
-**A**: 默认情况下，程序会自动选择最高画质。如需特定质量，可从下拉列表中选择。
+安装包输出到 `dist-installers/`。Core 构建会下载并校验官方发布的下载组件；完整说明见
+[BUILD_VARIANTS.md](BUILD_VARIANTS.md)。
 
-### Q4: 如何更新 `yt-dlp` 和 `ffmpeg`？
-**A**: 在"版本"标签页中点击对应的"更新"按钮即可。
+正式发布前必须配置 Tauri updater 公钥，并在 CI Secrets 中设置：
 
-### Q5: 出现 "No supported JavaScript runtime could be found" 错误怎么办？
-**A**: 这是因为 YouTube 现在需要 JavaScript 运行时来提取视频信息。请安装以下任一运行时：
-- **Node.js**（推荐）：访问 [nodejs.org](https://nodejs.org/) 下载并安装最新 LTS 版本
-- **Deno**：访问 [deno.land](https://deno.land/) 下载并安装
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 
-安装完成后，确保运行时在系统 PATH 中（通常安装程序会自动配置），然后重启应用程序即可。程序会自动检测并使用已安装的 JavaScript 运行时。
+迁移和发布注意事项见 [TAURI_MIGRATION.md](TAURI_MIGRATION.md)。
 
-### Q6: 如何下载整个频道的视频？
-**A**: 切换到"频道下载"标签页，输入频道 URL，点击"获取频道视频"按钮，等待获取完成后选择要下载的视频，设置保存位置和质量，然后点击"开始下载"即可。
+## 项目结构
 
-### Q7: 如何设置代理？
-**A**: 切换到"代理"标签页，选择代理类型，输入代理服务器地址和端口，如需要可输入用户名和密码，点击"测试连接"验证后保存设置即可。
+```text
+frontend/       React + TypeScript 界面
+src-tauri/      Tauri 2 / Rust 后端
+scripts/        下载组件与安装包构建脚本
+.github/        Windows CI 与发布流程
+resources/      应用图标等静态资源
+```
 
-### Q8: Cookie 获取失败怎么办？
-**A**: 请确保：
-- 本地已安装 Chrome 浏览器
-- Chrome 浏览器已登录 YouTube 账号
-- 尝试手动导入 Netscape 格式的 Cookie 文件
+## 从旧版升级
 
-## 技术支持
+Tauri 2 版本使用新的应用标识和数据目录，不会读取或删除旧版 Python/PyQt 的设置、
+Cookie、缓存或下载组件。首次启动后请重新选择下载目录，并按需重新登录或导入 Cookie。
 
-若使用过程中遇到问题，请查看应用程序日志文件，路径如下：
-- **Windows**: `%APPDATA%\YouTubeDownloader\logs\`
+## 使用提示
+
+1. 首次使用 Lite 版时，先在“版本与组件”页面安装 `yt-dlp` 与 FFmpeg。
+2. 下载受限内容时，在“Cookie”页面登录或导入 Netscape Cookie 文件，再在解析页面启用 Cookie。
+3. 解析或下载失败时，先检查网络、代理、Cookie 状态和下载组件版本。
+4. 请只下载你有权保存的内容，并遵守所在地法律及 YouTube 服务条款。
 
 ## 免责声明
 
-本工具仅供个人学习与研究使用，请遵守版权法规，勿用于商业用途或违反 YouTube 服务条款的行为。用户需自行承担因使用本工具而产生的法律责任。
+本项目仅供个人学习与研究使用。使用者应自行确认下载行为获得授权，并承担使用本软件产生的责任。
+
+
+<p align="center">
+  <a href="https://developers.openai.com/codex/">
+    <img src="https://img.shields.io/badge/AI%20辅助开发-OpenAI%20Codex-111111?style=for-the-badge&logo=openai&logoColor=white" alt="由 OpenAI Codex 辅助开发" />
+  </a>
+</p>
+
+本项目在重构、测试和文档编写过程中使用了 [OpenAI Codex](https://developers.openai.com/codex/) 辅助开发。
+
+> Codex 是 OpenAI 的产品。本项目为独立开源项目，与 OpenAI 不存在隶属或官方合作关系。

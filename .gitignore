@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+build/
+dist/
+*.spec
+.env/
+
+# 由版本管理器下载；不要把大型运行时提交到仓库。
+resources/binaries/
+.venv/
+
+node_modules/
+dist-web/
+src-tauri/target/
+src-tauri/resources/tools/*
+!src-tauri/resources/tools/.gitkeep
+*.tsbuildinfo
+.vite/
+vite.config.js
+vite.config.d.ts
+
+dist-installers/
+.tauri/

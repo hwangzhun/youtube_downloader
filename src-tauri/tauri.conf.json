@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "YouTube Downloader",
+  "version": "2.0.0",
+  "identifier": "com.hwangzhun.youtube-downloader",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5188",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist-web"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: https: data:; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "YouTube Downloader",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "decorations": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "../resources/icons/app_icon.ico",
+      "../resources/icons/app_icon.png"
+    ],
+    "resources": [],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzOThBQkE4N0Q5QUY0RTcKUldUbjlKcDlxS3VZOHpyUDlGa01MT2xsZkhmQkt3QmJnSXJqa0UzeXpwT0NPTmFJQ3dodUp3RXEK",
+      "endpoints": [
+        "https://github.com/hwangzhun/youtube_downloader/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
+
+
+
+
