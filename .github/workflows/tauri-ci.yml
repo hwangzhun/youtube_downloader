@@ -2,7 +2,10 @@ name: Tauri 2 CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - refactor/tauri
+    tags: "v2.*"
   pull_request:
   workflow_dispatch:
 
