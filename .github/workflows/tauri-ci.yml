@@ -1,60 +1,154 @@
-name: Tauri 2 CI
+name: Tauri 2 CI and Release
 
 on:
   push:
     branches:
       - main
       - refactor/tauri
-    tags: "v2.*"
+    tags:
+      - "v*"
+
   pull_request:
+
   workflow_dispatch:
+
+# 默认只读；发布任务会单独申请 contents: write
+permissions:
+  contents: read
 
 jobs:
   verify:
+    name: Verify
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-      - uses: Swatinem/rust-cache@v2
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
-      - run: cargo check --manifest-path src-tauri/Cargo.toml
 
-  bundle:
-    if: startsWith(github.ref, 'refs/tags/v2.')
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Check Rust
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  release:
+    name: Publish Windows Release
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: verify
     runs-on: windows-latest
+
+    # 创建 Release 和上传文件必须有写权限
+    permissions:
+      contents: write
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-      - run: npm ci
-      - name: Fetch and verify bundled tools
-        shell: pwsh
-        run: ./scripts/fetch-tools.ps1
-      - name: Build signed updater artifacts
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # 防止 Git 标签和 tauri.conf.json 版本不一致
+      - name: Verify release tag matches app version
         shell: pwsh
         env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $config = Get-Content -Raw -LiteralPath "src-tauri/tauri.conf.json" |
+            ConvertFrom-Json
+
+          $appVersion = [string]$config.version
+          $tagVersion = $env:RELEASE_TAG -replace '^v', ''
+
+          Write-Host "App version: $appVersion"
+          Write-Host "Tag version: $tagVersion"
+
+          if ($appVersion -ne $tagVersion) {
+            throw "Git 标签版本 $tagVersion 与 tauri.conf.json 版本 $appVersion 不一致"
+          }
+
+      - name: Build and publish Tauri release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # 私钥内容，不是公钥，也不是文件路径
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
+          # 如果私钥没有密码，这个 Secret 可以留空
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri build -- --target x86_64-pc-windows-msvc
-      - uses: actions/upload-artifact@v4
+
         with:
-          name: youtube-downloader-windows
-          path: |
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*
+          # __VERSION__ 会被替换为 tauri.conf.json 中的版本
+          tagName: v__VERSION__
+          releaseName: YouTube Downloader v__VERSION__
+
+          releaseBody: |
+            YouTube Downloader v__VERSION__
+
+            请下载 Windows x64 NSIS 安装包进行安装或升级。
+
+          # 必须为 false；Draft Release 不会被 /releases/latest 找到
+          releaseDraft: false
+          prerelease: false
+
+          # 使用 GitHub 自动生成 Release Notes
+          generateReleaseNotes: true
+
+          # 自动上传 latest.json
+          uploadUpdaterJson: true
+
+          # 自动上传 Tauri CLI 生成的 .sig
+          uploadUpdaterSignatures: true
+
+          # Windows 同时存在 MSI/NSIS 时优先选择 NSIS
+          updaterJsonPreferNsis: true
+
+          # 不额外上传裸 exe
+          uploadPlainBinary: false
+
+          # Lite 是官方自动更新版本
+          args: >-
+            --target x86_64-pc-windows-msvc
+            --config src-tauri/tauri.lite.conf.json

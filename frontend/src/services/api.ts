@@ -7,6 +7,7 @@ import type {
   RuntimeStatus,
   Settings,
   TaskEvent,
+  ToolProgress,
   ToolUpdate,
   VideoInfo,
 } from "../types";
@@ -36,6 +37,7 @@ export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) =>
     invoke<Settings>("save_settings", { settings }),
+  testProxy: (proxyUrl: string) => invoke<string>("test_proxy", { proxyUrl }),
   selectOutputDirectory: () =>
     invoke<string | null>("select_output_directory"),
   openLoginWindow: () => invoke<void>("open_login_window"),
@@ -48,8 +50,11 @@ export const api = {
   clearCookie: () => invoke<void>("clear_cookie"),
   cookieStatus: () => invoke<CookieStatus>("get_cookie_status"),
   checkToolUpdates: () => invoke<ToolUpdate[]>("check_tool_updates"),
-  updateTool: (tool: ToolUpdate["tool"]) =>
-    invoke<void>("update_tool", { tool }),
+  updateTool: async (tool: ToolUpdate["tool"], onProgress: (progress: ToolProgress) => void) => {
+    const channel = new Channel<ToolProgress>();
+    channel.onmessage = onProgress;
+    return invoke<void>("update_tool", { tool, onProgress: channel });
+  },
   checkAppUpdate: () => invoke<boolean>("check_app_update"),
   installAppUpdate: () => invoke<void>("install_app_update"),
 };

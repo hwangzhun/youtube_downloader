@@ -11,7 +11,7 @@
   },
   "app": {
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: https: data:; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
+      "csp": "default-src 'self'; img-src 'self' asset: https: data:; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self'"
     },
     "windows": [
       {
@@ -22,7 +22,8 @@
         "minWidth": 900,
         "minHeight": 600,
         "center": true,
-        "decorations": false
+        "decorations": false,
+        "visible": false
       }
     ]
   },

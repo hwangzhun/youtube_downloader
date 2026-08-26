@@ -1,25 +1,33 @@
-__pycache__/
-*.py[cod]
-.pytest_cache/
-
-build/
-dist/
-*.spec
-.env/
-
-# 由版本管理器下载；不要把大型运行时提交到仓库。
-resources/binaries/
-.venv/
-
+# Node / Vite
 node_modules/
 dist-web/
-src-tauri/target/
-src-tauri/resources/tools/*
-!src-tauri/resources/tools/.gitkeep
 *.tsbuildinfo
 .vite/
 vite.config.js
 vite.config.d.ts
 
-dist-installers/
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/schemas/
 .tauri/
+
+# 下载的运行时组件
+src-tauri/resources/tools/*
+!src-tauri/resources/tools/.gitkeep
+
+# 安装包
+dist-installers/
+
+# 环境变量与日志
+.env
+.env.*
+!.env.example
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+Desktop.ini

@@ -46,6 +46,7 @@ export function Layout() {
                 <NavLink key={to} to={to} end={to === "/"} onClick={() => setMenuOpen(false)}>
                   <Icon name={icon} /><span>{label}</span>
                   {to === "/downloads" && drafts.length > 0 && <b>{drafts.length}</b>}
+                  {to === "/proxy" && settings.proxyEnabled && settings.proxyUrl && <i className="proxy-enabled-dot" title="代理已启用" />}
                 </NavLink>
               ))}
               <div className="app-menu-separator" />
@@ -88,6 +89,7 @@ export function Layout() {
               <NavLink key={to} to={to} end={to === "/"}>
                 <Icon name={icon} />{label}
                 {to === "/downloads" && drafts.length > 0 && <b className="nav-badge">{drafts.length}</b>}
+                {to === "/proxy" && settings.proxyEnabled && settings.proxyUrl && <i className="proxy-enabled-dot" title="代理已启用" />}
               </NavLink>
             ))}
           </nav>
@@ -103,7 +105,10 @@ export function Layout() {
           </div>
           {settings.firstRunNoticePending && (
             <div className="alert migration">
-              <span><strong>欢迎使用 Tauri 2</strong>新版本不会读取旧版设置、Cookie 或缓存，请重新选择下载目录并登录。</span>
+              <span className="migration-copy">
+                <strong>欢迎使用新版 YouTube Downloader</strong>
+                <span>本次升级不会迁移旧版设置、Cookie 或缓存，请重新选择下载目录并登录。</span>
+              </span>
               <button onClick={() => saveSettings({ ...settings, firstRunNoticePending: false })}>我知道了</button>
             </div>
           )}

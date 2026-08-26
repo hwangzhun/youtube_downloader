@@ -38,6 +38,7 @@ pub fn run() {
             let _ = app.remove_menu()?;
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.remove_menu()?;
+                window.show()?;
             }
             let app_data_dir = app.path().app_data_dir()?;
             let resource_dir = app.path().resource_dir()?;
@@ -100,6 +101,7 @@ pub fn run() {
             commands::set_queue_paused,
             commands::get_settings,
             commands::save_settings,
+            commands::test_proxy,
             commands::select_output_directory,
             commands::open_login_window,
             commands::capture_login_cookies,

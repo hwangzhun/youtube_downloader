@@ -2,17 +2,19 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { api } from "../services/api";
 import { normalizeError, useAppStore } from "../stores/appStore";
-import type { ToolUpdate } from "../types";
+import type { ToolProgress, ToolUpdate } from "../types";
 
 type UpdatingTarget = ToolUpdate["tool"] | "app";
 
 export function VersionsPage() {
   const runtime = useAppStore((state) => state.runtime);
+  const refreshRuntime = useAppStore((state) => state.refreshRuntime);
   const [updates, setUpdates] = useState<ToolUpdate[]>([]);
   const [checking, setChecking] = useState(false);
   const [appUpdateAvailable, setAppUpdateAvailable] = useState(false);
   const [updating, setUpdating] = useState<UpdatingTarget | null>(null);
   const [error, setError] = useState("");
+  const [toolProgress, setToolProgress] = useState<ToolProgress>();
   const tools = runtime ? [
     ["应用", runtime.appVersion, true],
     ["yt-dlp", runtime.ytDlp.version || "未安装", runtime.ytDlp.available],
@@ -45,18 +47,22 @@ export function VersionsPage() {
 
   useEffect(() => { void checkUpdates(); }, []);
 
-  const updateTool = async (tool: ToolUpdate["tool"]) => {
+  const updateTool = async (tool: ToolUpdate["tool"], installed: boolean) => {
+    const action = installed ? "更新" : "安装";
     setUpdating(tool);
+    setToolProgress({ tool, percentage: 0, phase: "准备下载" });
     setError("");
     try {
-      await api.updateTool(tool);
+      await api.updateTool(tool, setToolProgress);
+      await refreshRuntime();
       setUpdates((current) => current.map((update) =>
-        update.tool === tool ? { ...update, available: false, currentVersion: update.latestVersion } : update
+        update.tool === tool ? { ...update, available: false, currentVersion: undefined } : update
       ));
     } catch (reason) {
-      setError(`${tool === "ytDlp" ? "yt-dlp" : "ffmpeg"} 更新失败：${normalizeError(reason)}`);
+      setError(`${tool === "ytDlp" ? "yt-dlp" : "ffmpeg"} ${action}失败：${normalizeError(reason)}`);
     } finally {
       setUpdating(null);
+      setToolProgress(undefined);
     }
   };
 
@@ -76,7 +82,7 @@ export function VersionsPage() {
   return (
     <>
       <PageHeader eyebrow="RUNTIME" title="版本与组件"
-        description="检查应用和下载组件；组件更新会校验后原子切换。" 
+        description="检查应用和下载组件；组件安装或更新会显示实时进度，并在校验后原子切换。"
         action={<button className="ghost loading-button" disabled={checking || updating !== null} onClick={() => void checkUpdates()}>
           {checking && <span className="spinner" aria-hidden="true" />}
           {checking ? "检查中…" : "检查更新"}
@@ -90,15 +96,22 @@ export function VersionsPage() {
           const update = tool ? updates.find((item) => item.tool === tool) : undefined;
           const isUpdating = tool !== null && updating === tool;
           const displayVersion = update?.currentVersion || version;
+          const installed = available;
+          const actionLabel = installed ? "更新" : "安装";
+          const progress = isUpdating && toolProgress?.tool === tool ? toolProgress : undefined;
           return <div key={name} className={isUpdating ? "is-updating" : undefined}>
           <span><i className={available ? "ok" : "bad"} />{name}</span>
-          <code>{update?.available && update.latestVersion ? `${displayVersion} → ${update.latestVersion}` : displayVersion}</code>
-          {update?.available && tool
-            ? <button className="ghost loading-button" disabled={updating !== null} onClick={() => void updateTool(tool)}>
+          <code>{installed && update?.available && update.latestVersion ? `${displayVersion} → ${update.latestVersion}` : displayVersion}</code>
+          {tool && (!installed || update?.available)
+            ? <button className="ghost loading-button" disabled={updating !== null} onClick={() => void updateTool(tool, installed)}>
                 {isUpdating && <span className="spinner" aria-hidden="true" />}
-                {isUpdating ? "更新中…" : "更新"}
+                {isUpdating ? `${actionLabel}中 ${progress?.percentage ?? 0}%` : actionLabel}
               </button>
-            : <small>{available ? "已就绪" : "需要安装"}</small>}
+            : <small>{available ? "已就绪" : name === "ffprobe" ? "随 FFmpeg 安装" : "需要安装"}</small>}
+          {progress && <div className="component-update-progress">
+            <div><span>{progress.phase}</span><b>{progress.percentage}%</b></div>
+            <div className="component-progress-track"><i style={{ width: `${progress.percentage}%` }} /></div>
+          </div>}
           </div>;
         })}
       </section>

@@ -1,6 +1,6 @@
 {
   "bundle": {
     "resources": [],
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": true
   }
 }

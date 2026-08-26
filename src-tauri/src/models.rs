@@ -351,3 +351,11 @@ pub struct ToolUpdate {
     pub latest_version: Option<String>,
     pub available: bool,
 }
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolProgress {
+    pub tool: String,
+    pub percentage: u8,
+    pub phase: String,
+}

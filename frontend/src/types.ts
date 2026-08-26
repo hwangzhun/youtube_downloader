@@ -102,6 +102,12 @@ export interface DownloadDraft {
   useCookie: boolean;
 }
 
+export interface ToolProgress {
+  tool: "ytDlp" | "ffmpeg";
+  percentage: number;
+  phase: string;
+}
+
 export interface ToolUpdate {
   tool: "ytDlp" | "ffmpeg";
   currentVersion?: string;

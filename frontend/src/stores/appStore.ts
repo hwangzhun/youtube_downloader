@@ -20,6 +20,7 @@ interface AppState {
   drafts: DownloadDraft[];
   theme: "light" | "dark";
   bootstrap: () => Promise<void>;
+  refreshRuntime: () => Promise<void>;
   applyTaskEvent: (event: TaskEvent) => void;
   saveSettings: (settings: Settings) => Promise<void>;
   setQueuePaused: (paused: boolean) => Promise<void>;
@@ -51,6 +52,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     } finally {
       set({ busy: false });
     }
+  },
+  refreshRuntime: async () => {
+    const runtime = await api.runtimeStatus();
+    set({ runtime });
   },
   applyTaskEvent: (event) => {
     if (event.event === "snapshot") {

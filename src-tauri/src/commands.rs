@@ -6,7 +6,10 @@ use crate::{
     state::AppState,
     tools,
 };
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 use tauri::{ipc::Channel, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -116,6 +119,47 @@ pub async fn get_settings(state: State<'_, AppState>) -> AppResult<Settings> {
 #[tauri::command]
 pub async fn save_settings(state: State<'_, AppState>, settings: Settings) -> AppResult<Settings> {
     state.save_settings(settings).await
+}
+
+#[tauri::command]
+pub async fn test_proxy(proxy_url: String) -> AppResult<String> {
+    let proxy_url = proxy_url.trim();
+    if proxy_url.is_empty() {
+        return Err(AppError::user("proxy_required", "请先填写代理 URL"));
+    }
+    downloader::validate_proxy(proxy_url)?;
+    let proxy = reqwest::Proxy::all(proxy_url)
+        .map_err(|error| AppError::user("invalid_proxy", format!("代理 URL 无法使用：{error}")))?;
+    let client = reqwest::Client::builder()
+        .user_agent("YouTube-Downloader/2.0")
+        .proxy(proxy)
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| AppError::user("proxy_client", format!("无法创建代理连接：{error}")))?;
+    let started = Instant::now();
+    let response = client
+        .get("https://www.youtube.com/generate_204")
+        .send()
+        .await
+        .map_err(|error| {
+            AppError::user(
+                "proxy_test_failed",
+                format!("代理连接 YouTube 失败：{error}"),
+            )
+        })?;
+    let status = response.status();
+    if status.is_server_error() {
+        return Err(AppError::user(
+            "proxy_test_failed",
+            format!("代理服务器返回 HTTP {}", status.as_u16()),
+        ));
+    }
+    Ok(format!(
+        "代理可用 · YouTube 响应 {} · {} ms",
+        status.as_u16(),
+        started.elapsed().as_millis()
+    ))
 }
 
 #[tauri::command]
@@ -271,8 +315,12 @@ pub async fn check_tool_updates(state: State<'_, AppState>) -> AppResult<Vec<Too
 }
 
 #[tauri::command]
-pub async fn update_tool(state: State<'_, AppState>, tool: String) -> AppResult<()> {
-    tools::update(state.inner(), &tool).await
+pub async fn update_tool(
+    state: State<'_, AppState>,
+    tool: String,
+    on_progress: Channel<ToolProgress>,
+) -> AppResult<()> {
+    tools::update(state.inner(), &tool, &on_progress).await
 }
 
 #[tauri::command]

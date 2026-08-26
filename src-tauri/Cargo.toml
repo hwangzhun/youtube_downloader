@@ -32,8 +32,9 @@ regex = "1"
 url = "2"
 sha2 = "0.10"
 hex = "0.4"
+futures-util = "0.3"
 log = "0.4"
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "socks", "stream"] }
 zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(windows)'.dependencies]

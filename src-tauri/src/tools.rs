@@ -1,15 +1,17 @@
 use crate::{
     error::{AppError, AppResult},
-    models::ToolUpdate,
+    models::{ToolProgress, ToolUpdate},
     runtime,
     state::AppState,
 };
+use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::{Cursor, Write},
     path::{Path, PathBuf},
 };
+use tauri::ipc::Channel;
 use uuid::Uuid;
 
 const YTDLP_EXE: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
@@ -21,7 +23,10 @@ const FFMPEG_SUMS: &str =
 
 pub async fn check(state: &AppState) -> Vec<ToolUpdate> {
     let current = runtime::runtime_status(state);
-    let latest_yt = latest_tag(YTDLP_API).await.ok();
+    let latest_yt = match client(state).await {
+        Ok(client) => latest_tag(&client, YTDLP_API).await.ok(),
+        Err(_) => None,
+    };
     vec![
         ToolUpdate {
             tool: "ytDlp".into(),
@@ -30,7 +35,7 @@ pub async fn check(state: &AppState) -> Vec<ToolUpdate> {
                     .yt_dlp
                     .version
                     .as_ref()
-                    .is_none_or(|installed| !installed.contains(latest.trim_start_matches('v')))
+                    .is_none_or(|installed| !installed.contains(latest.trim_start_matches("v")))
             }),
             current_version: current.yt_dlp.version,
             latest_version: latest_yt,
@@ -44,39 +49,56 @@ pub async fn check(state: &AppState) -> Vec<ToolUpdate> {
     ]
 }
 
-pub async fn update(state: &AppState, tool: &str) -> AppResult<()> {
+pub async fn update(
+    state: &AppState,
+    tool: &str,
+    progress: &Channel<ToolProgress>,
+) -> AppResult<()> {
     match tool {
-        "ytDlp" => update_ytdlp(state).await,
-        "ffmpeg" => update_ffmpeg(state).await,
+        "ytDlp" => update_ytdlp(state, progress).await,
+        "ffmpeg" => update_ffmpeg(state, progress).await,
         _ => Err(AppError::user("unknown_tool", "未知的下载组件")),
     }
 }
 
-async fn update_ytdlp(state: &AppState) -> AppResult<()> {
-    let (binary, sums) = tokio::try_join!(download(YTDLP_EXE), download(YTDLP_SUMS))?;
+async fn update_ytdlp(state: &AppState, progress: &Channel<ToolProgress>) -> AppResult<()> {
+    report(progress, "ytDlp", 0, "准备下载");
+    let client = client(state).await?;
+    let sums = download(&client, YTDLP_SUMS).await?;
+    let binary = download_with_progress(&client, YTDLP_EXE, "ytDlp", progress, 5, 92).await?;
+    report(progress, "ytDlp", 96, "校验文件");
     verify_published_checksum(&binary, &String::from_utf8_lossy(&sums), "yt-dlp.exe")?;
     let staging = prepare_staging(state)?;
     fs::write(staging.join("yt-dlp.exe"), binary)?;
     verify_executable(&staging.join("yt-dlp.exe"))?;
-    activate(state, staging)
+    activate(state, staging)?;
+    report(progress, "ytDlp", 100, "安装完成");
+    Ok(())
 }
 
-async fn update_ffmpeg(state: &AppState) -> AppResult<()> {
-    let (archive, sums) = tokio::try_join!(download(FFMPEG_ZIP), download(FFMPEG_SUMS))?;
+async fn update_ffmpeg(state: &AppState, progress: &Channel<ToolProgress>) -> AppResult<()> {
+    report(progress, "ffmpeg", 0, "准备下载");
+    let client = client(state).await?;
+    let sums = download(&client, FFMPEG_SUMS).await?;
+    let archive = download_with_progress(&client, FFMPEG_ZIP, "ffmpeg", progress, 5, 90).await?;
     let archive_name = "ffmpeg-master-latest-win64-gpl-shared.zip";
+    report(progress, "ffmpeg", 93, "校验文件");
     verify_published_checksum(&archive, &String::from_utf8_lossy(&sums), archive_name)?;
     let staging = prepare_staging(state)?;
     let target = staging.clone();
+    report(progress, "ffmpeg", 96, "解压组件");
     tokio::task::spawn_blocking(move || extract_ffmpeg(&archive, &target))
         .await
         .map_err(|error| AppError::Internal(error.to_string()))??;
     verify_executable(&staging.join("ffmpeg.exe"))?;
     verify_executable(&staging.join("ffprobe.exe"))?;
-    activate(state, staging)
+    activate(state, staging)?;
+    report(progress, "ffmpeg", 100, "安装完成");
+    Ok(())
 }
 
-async fn latest_tag(url: &str) -> AppResult<String> {
-    let value: serde_json::Value = client()
+async fn latest_tag(client: &reqwest::Client, url: &str) -> AppResult<String> {
+    let value: serde_json::Value = client
         .get(url)
         .send()
         .await
@@ -93,8 +115,8 @@ async fn latest_tag(url: &str) -> AppResult<String> {
         .ok_or_else(|| AppError::user("release_metadata", "发布信息缺少版本号"))
 }
 
-async fn download(url: &str) -> AppResult<Vec<u8>> {
-    let response = client()
+async fn download(client: &reqwest::Client, url: &str) -> AppResult<Vec<u8>> {
+    let response = client
         .get(url)
         .send()
         .await
@@ -112,12 +134,83 @@ async fn download(url: &str) -> AppResult<Vec<u8>> {
         .map_err(network)
 }
 
-fn client() -> reqwest::Client {
-    reqwest::Client::builder()
+async fn download_with_progress(
+    client: &reqwest::Client,
+    url: &str,
+    tool: &str,
+    progress: &Channel<ToolProgress>,
+    start: u8,
+    end: u8,
+) -> AppResult<Vec<u8>> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(network)?
+        .error_for_status()
+        .map_err(network)?;
+    let total = response.content_length().unwrap_or_default();
+    if total > 250 * 1024 * 1024 {
+        return Err(AppError::fatal("tool_too_large", "组件下载大小异常"));
+    }
+    let mut bytes = if total > 0 {
+        Vec::with_capacity(total as usize)
+    } else {
+        Vec::new()
+    };
+    let mut stream = response.bytes_stream();
+    let mut last = start;
+    report(progress, tool, start, "下载组件");
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(network)?;
+        bytes.extend_from_slice(&chunk);
+        if bytes.len() > 250 * 1024 * 1024 {
+            return Err(AppError::fatal("tool_too_large", "组件下载大小异常"));
+        }
+        if total > 0 {
+            let ratio = (bytes.len() as u64).saturating_mul((end - start) as u64) / total;
+            let percentage = start.saturating_add(ratio.min((end - start) as u64) as u8);
+            if percentage > last {
+                last = percentage;
+                report(progress, tool, percentage, "下载组件");
+            }
+        }
+    }
+    report(progress, tool, end, "下载完成");
+    Ok(bytes)
+}
+
+async fn client(state: &AppState) -> AppResult<reqwest::Client> {
+    let settings = state.settings().await;
+    let proxy_url = settings
+        .proxy_enabled
+        .then_some(settings.proxy_url.trim())
+        .filter(|value| !value.is_empty());
+    client_builder(proxy_url)
+}
+
+fn client_builder(proxy_url: Option<&str>) -> AppResult<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
         .user_agent("YouTube-Downloader/2.0")
-        .timeout(std::time::Duration::from_secs(180))
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(300));
+    if let Some(proxy_url) = proxy_url {
+        let proxy = reqwest::Proxy::all(proxy_url).map_err(|error| {
+            AppError::user("invalid_proxy", format!("代理 URL 无法使用：{error}"))
+        })?;
+        builder = builder.proxy(proxy);
+    }
+    builder
         .build()
-        .expect("http client")
+        .map_err(|error| AppError::user("tool_network", format!("无法创建组件下载连接：{error}")))
+}
+
+fn report(progress: &Channel<ToolProgress>, tool: &str, percentage: u8, phase: &str) {
+    let _ = progress.send(ToolProgress {
+        tool: tool.to_owned(),
+        percentage,
+        phase: phase.to_owned(),
+    });
 }
 
 fn network(error: reqwest::Error) -> AppError {
@@ -254,6 +347,11 @@ pub fn install_bundled_tools(state: &AppState) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn constructs_https_client_with_crypto_provider() {
+        let _ = client_builder(None).expect("https client");
+    }
 
     #[test]
     fn validates_checksum_manifest() {

@@ -404,7 +404,7 @@ pub fn validate_url(value: &str) -> AppResult<()> {
     Ok(())
 }
 
-fn validate_proxy(value: &str) -> AppResult<()> {
+pub(crate) fn validate_proxy(value: &str) -> AppResult<()> {
     let url = url::Url::parse(value)
         .map_err(|_| AppError::user("invalid_proxy", "代理 URL 格式不正确"))?;
     if !matches!(url.scheme(), "http" | "https" | "socks5") {
