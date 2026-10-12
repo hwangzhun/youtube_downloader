@@ -88,7 +88,14 @@ src-tauri/      Tauri 2 / Rust 后端
 scripts/        下载组件与安装包构建脚本
 .github/        Windows CI 与发布流程
 resources/      应用图标等静态资源
+website/        中英双语静态官网（EdgeOne Pages）
 ```
+
+## 项目介绍网站
+
+官网独立于桌面应用构建，包含项目介绍、下载功能、设置说明与中英双语分享缩略图。
+支持通过 EdgeOne Pages 连接当前 Git 仓库部署，并通过环境变量接入 Umami。
+构建、部署和统计配置见 [website/README.md](website/README.md)。
 
 ## 从旧版升级
 
